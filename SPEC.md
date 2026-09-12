@@ -36,16 +36,24 @@ widgets exist.
   common, best-documented path so agents emit working code on the first attempt.
 - **Consequence**: the browser forces JavaScript/TypeScript on the client. Python
   stays for the backend.
+- **Geolocation**: browser geolocation works only in a secure context. Serve the
+  client over HTTPS or `localhost` during the demo.
 
 ---
 
 ## 3. Demo success criteria
 
-1. Three to four widgets enabled and running on one client at the same time.
+1. Three widgets enabled and running on one client at the same time: bathrooms,
+   flights, and friends.
 2. Publish a new widget, then have another user download and run it on their
    client.
-3. Stretch: an AI assistant where a non-technical user prompts their own widget
-   and publishes it.
+3. A non-technical user prompts a widget in the wizard. The agent asks
+   clarifying questions, tests the data source, generates a manifest and bundle,
+   publishes them, and the client auto-installs and enables the result.
+
+The wizard is general-purpose. It creates any widget the declarative model
+supports, from any reachable data source. The water-fountains widget is one demo
+instance, not the wizard's only output.
 
 ---
 
@@ -53,9 +61,11 @@ widgets exist.
 
 ```
 Map Client (browser)
- ├─ WidgetManager (main thread)  ── owns map, DOM, registry, worker lifecycle
+ ├─ WidgetManager (main thread)  ── owns map, DOM, registry, workers,
+ │                                   geolocation, and the camera lease
  │    ├─ MapLibre GL JS           ── the map renderer
- │    └─ SDK bridge               ── typed commands/events boundary
+ │    ├─ SDK bridge               ── typed commands/events boundary
+ │    └─ Wizard panel             ── built-in chat UI (not a widget)
  ├─ Widget A  ── Web Worker
  ├─ Widget B  ── Web Worker
  └─ Widget C  ── Web Worker
@@ -67,7 +77,12 @@ Generic Widget Server (FastAPI + SQLite, one Docker Compose service)
  ├─ Filter      ── serves filtered subsets of indexed cache
  └─ Secrets     ── server-side store of API keys, referenced by ID
         │
- External APIs / databases (e.g. flight data, OpenStreetMap)
+Agent Service (Python + LLM, second Docker Compose service)
+ ├─ Wizard API  ── receives user prompts, returns generated widgets
+ ├─ Source test ── fetches a candidate source (SSRF rules) to verify shape
+ └─ Generator   ── writes manifest + bundle, publishes via POST /widgets
+        │
+ External APIs / databases (e.g. ADSB.lol, OpenStreetMap Overpass)
 ```
 
 **Rules that shape everything:**
@@ -81,6 +96,10 @@ Generic Widget Server (FastAPI + SQLite, one Docker Compose service)
    No server code.
 4. The server selects subsets of cached data (filtering). It never joins,
    aggregates, computes, or reshapes. Every record is returned whole.
+5. The Agent Service may fetch, generate, and publish. It never runs widget code
+   or touches the map. Its output is always a manifest plus a bundle.
+6. The wizard builds any widget the manifest and SDK express. Its limit is the
+   channel model: no pagination, no joins, no server transforms.
 
 ---
 
@@ -89,8 +108,8 @@ Generic Widget Server (FastAPI + SQLite, one Docker Compose service)
 ### 5.1 Map Client
 
 The frontend wrapper around the map renderer. It owns the map, all DOM outside
-the map (side panels, popups, badges), and exposes rendering capability to
-widgets exclusively through the SDK. No widget code runs here.
+the map (side panels, popups, badges, the wizard panel), and exposes rendering
+capability to widgets exclusively through the SDK. No widget code runs here.
 
 ### 5.2 Widget
 
@@ -102,15 +121,15 @@ code.
 
 The environment a widget's JS bundle executes in: a dedicated Web Worker per
 enabled widget. Isolation means a misbehaving widget cannot freeze the map's
-main thread. The worker has no direct map or DOM access.
+main thread. The worker has no direct map, DOM, or geolocation access.
 
 ### 5.4 SDK (the boundary)
 
 The typed contract between a widget and the Map Client, in two directions:
 
 - **Widget → Map**: render commands (draw, move, remove, popups, panels,
-  camera).
-- **Map → Widget**: events (marker clicked, map clicked).
+  camera, geolocation).
+- **Map → Widget**: events (marker clicked, map clicked, camera, geolocation).
 
 The SDK is the single owner of the map and DOM. It is the most important
 interface in the system; its job is to define the breadth of what a widget can
@@ -119,8 +138,9 @@ express.
 ### 5.5 WidgetManager
 
 The main-thread runtime. It owns the registry of installed widgets, spawns and
-terminates workers, routes events to the correct widget, and owns the map and
-DOM. It is the only code that talks to MapLibre directly.
+terminates workers, routes events to the correct widget, owns the map and DOM,
+owns the geolocation watch, and enforces the camera lease. It is the only code
+that talks to MapLibre directly.
 
 ### 5.6 Generic Widget Server
 
@@ -149,6 +169,21 @@ handler. See section 8.
 The unit of privacy. A private channel's data is scoped to an instance token
 (a room). Possession of the token is the access boundary. See section 9.
 
+### 5.10 Agent Service (wizard)
+
+A second Docker Compose service (Python + LLM). It receives a natural-language
+description, asks clarifying questions when the data source or behavior is
+ambiguous, fetches the candidate source to verify its shape under the SSRF rules
+(section 10.8), then generates a manifest and a JS bundle and publishes them via
+`POST /widgets`. It holds the LLM key and the SDK documentation in context. It is
+general-purpose: any widget the declarative model supports.
+
+### 5.11 Wizard panel
+
+A built-in chat panel in the Map Client, not a widget. It relays the user's
+prompt to the Agent Service and, on success, auto-installs and enables the
+returned widget.
+
 ---
 
 ## 6. Locked decisions
@@ -160,11 +195,11 @@ The unit of privacy. A private channel's data is scoped to an instance token
 | 3 | Server code model | Client-only code + declarative config (no server code) |
 | 4 | Server role | Dumb pipe: fetch, cache, filter, broadcast; never transform |
 | 5 | Publishing | Server-hosted registry; manifest + JS bundle |
-| 6 | Deployment | FastAPI + SQLite, one Docker Compose service |
+| 6 | Deployment | Generic server: FastAPI + SQLite, one Compose service. Agent Service: a second Compose service |
 | 7 | Transport | HTTP-only (writes POST, reads short-poll); WebSocket is upgrade path |
 | 8 | Render command style | Imperative typed commands over postMessage |
 | 9 | Lifecycle | One worker per widget; WidgetManager owns lifecycle |
-| 10 | Camera | Lease model with auto-release (section 7.4) |
+| 10 | Camera | Lease gates continuous follow only; pans are last-writer-wins; last-request-wins preemption (section 7.7) |
 | 11 | Manifest | One JSON: identity section + server config section |
 | 12 | Channel model | One channel = one direction = one handler |
 | 13 | Secrets | Server-side store referenced by ID; never in the manifest |
@@ -176,7 +211,7 @@ The unit of privacy. A private channel's data is scoped to an instance token
 | 19 | External scope | One endpoint = one channel = one shape; cache-only client reads |
 | 20 | External visibility | Public-read only (one shared cache) |
 | 21 | Poll intervals | External fetch default 60s, min 5s; client cadence is widget code |
-| 22 | Auth types | Header, query param, none |
+| 22 | Auth types | Header, query param, none. OAuth2 client-credentials is out of scope |
 | 23 | Pagination | None for MVP (single request per channel) |
 | 24 | Failure handling | Keep last-good cache on error, retry next interval |
 | 25 | SSRF safety | https-only, reject private and loopback ranges |
@@ -185,6 +220,14 @@ The unit of privacy. A private channel's data is scoped to an instance token
 | 28 | Accumulation | snapshot or series per channel, time-based retention |
 | 29 | Client-origin unification | Write channel declares mapping; read references it |
 | 30 | Smooth motion | Client-side interpolation, the widget's responsibility |
+| 31 | Flights data source | ADSB.lol, free + no auth; fields: callsign, registration, type, altitude, speed, heading. No origin/destination |
+| 32 | Dynamic viewport | Broad fixed cache + client `bounds` filter; no server-side viewport templating |
+| 33 | Client-channel accumulation | `mode` + `retain` on client write channels; default series + 3600 |
+| 34 | Server-stamped time | Reserved `@ingestedAt` in `record.time`; server stamps at fetch, returns records unchanged |
+| 35 | Geolocation | Proxied through the SDK; WidgetManager draws a native user-location dot |
+| 36 | Marker rotation | Optional `rotation` field, degrees clockwise from north |
+| 37 | Camera follow | `jumpTo` command for instant follow moves; `flyTo` for animated pans |
+| 38 | Wizard | Demo-required; general-purpose; second Compose service; auto-installs its output |
 
 ---
 
@@ -193,8 +236,8 @@ The unit of privacy. A private channel's data is scoped to an instance token
 ### 7.1 Execution model
 
 A widget's JS bundle runs in a dedicated Web Worker. The worker has no access to
-the map, the DOM, `window`, or `localStorage`. Everything crosses the SDK
-boundary as messages over `postMessage`.
+the map, the DOM, `window`, `localStorage`, or `navigator.geolocation`.
+Everything crosses the SDK boundary as messages over `postMessage`.
 
 - **Widget → Map**: render commands.
 - **Map → Widget**: events.
@@ -251,11 +294,12 @@ MapLibre's ordering.
 **Markers:**
 
 ```json
-{ "id": "b42", "lat": 40.71, "lng": -74.0, "icon": "🚻", "color": "#0066ff", "label": "open", "title": "Public restroom" }
+{ "id": "b42", "lat": 40.71, "lng": -74.0, "icon": "🚻", "color": "#0066ff", "label": "open", "title": "Public restroom", "rotation": 0 }
 ```
 
 - `addMarker`: `id`, `lat`, `lng`, optional `icon` (emoji or image URL),
-  `color`, `label` (badge text), `title` (hover tooltip).
+  `color`, `label` (badge text), `title` (hover tooltip), `rotation` (degrees,
+  0–360, clockwise from north). Default `rotation` is 0.
 - `updateMarker`: `id` plus any changed fields.
 - `removeMarker`: `id` only.
 
@@ -297,11 +341,29 @@ MapLibre's ordering.
 { "name": "requestCameraControl", "payload": {} }
 { "name": "releaseCameraControl", "payload": {} }
 { "name": "flyTo", "payload": { "center": [40.71, -74.0], "zoom": 12, "bearing": 90 } }
+{ "name": "jumpTo", "payload": { "center": [40.71, -74.0], "zoom": 12, "bearing": 90 } }
 { "name": "fitBounds", "payload": { "bounds": [[40.5, -74.3], [40.9, -73.7]] } }
 ```
 
 - `flyTo.center` is `[lat, lng]`. `fitBounds.bounds` is
   `[[south, west], [north, east]]`.
+- `flyTo` is animated. `jumpTo` is instant, with no animation; use it for
+  follow loops.
+- `flyTo`, `jumpTo`, and `fitBounds` need no camera lease (section 7.7). Any
+  widget may issue them; the most recent command wins.
+
+**Geolocation:**
+
+```json
+{ "name": "startGeolocation", "payload": { "highAccuracy": true } }
+{ "name": "stopGeolocation", "payload": {} }
+```
+
+- `startGeolocation` asks WidgetManager to begin a `watchPosition` on the main
+  thread. The worker cannot call `navigator.geolocation` itself.
+- `stopGeolocation` ends the watch.
+- While a watch is active, WidgetManager draws a native user-location dot on the
+  map and updates it on each fix.
 
 ### 7.5 Events
 
@@ -312,12 +374,19 @@ MapLibre's ordering.
 { "name": "cameraDenied", "payload": {} }
 { "name": "cameraRevoked", "payload": { "reason": "ttl" } }
 { "name": "viewportChanged", "payload": { "bounds": [[40.5, -74.3], [40.9, -73.7]], "center": [40.71, -74.0], "zoom": 12 } }
+{ "name": "geolocation", "payload": { "lat": 40.71, "lng": -74.0, "accuracy": 25 } }
+{ "name": "geolocationError", "payload": { "code": 1, "message": "permission denied" } }
 ```
 
-- `cameraRevoked.reason` is `ttl`, `userGesture`, or `released`.
+- `cameraRevoked.reason` is `ttl`, `userGesture`, `released`, or `preempted`.
+- `cameraDenied` is reserved for a future strict-leasing mode. Under the current
+  last-request-wins model, a control request always preempts, so it never fires.
 - `viewportChanged` fires debounced on move-end, on user drag/zoom/scroll and on
   another widget's camera command. It is suppressed for the widget that issued
   the command. It is advisory: the receiving widget decides whether to refetch.
+- `geolocation` fires on each position fix. `accuracy` is meters.
+- `geolocationError` fires on denial, timeout, or unavailability. `code` mirrors
+  the browser's `PositionError` code; `message` is human-readable.
 
 ### 7.6 Ownership and event routing
 
@@ -326,20 +395,33 @@ MapLibre's ordering.
 - A click on any widget-owned item dispatches to that widget.
 - The SDK records every drawn ID per widget for cleanup (section 7.10).
 
-### 7.7 Camera lease (model)
+### 7.7 Camera model (consolidated)
 
-Camera control is a lease that expires. States: `FREE` or `LOCKED(owner)`. One
-owner, never two.
+Two concepts: **pan** (one-shot) and **follow** (continuous).
 
-- **Acquire**: `requestCameraControl()`. Granted if free, denied otherwise. No
-  queue, no forced preemption.
-- **Lease**: granted for 10 seconds. Any camera command from the owner renews
-  the lease automatically. No heartbeat message.
-- **Release — any one of four triggers reclaims the map:**
-  1. widget calls `releaseCameraControl()`;
-  2. lease TTL expires (catches a hung widget);
-  3. worker dies, disables, or uninstalls (catches a crashed widget);
-  4. the user drags, zooms, or scrolls the map (catches everything else).
+**Pan.** `flyTo`, `jumpTo`, and `fitBounds` are allowed to any widget at any
+time. No lease is required. The most recent command wins. If another widget
+holds the follow lease, a pan from a non-owner revokes that lease and the pan
+wins.
+
+**Follow.** `requestCameraControl()` acquires the follow lease. States: `FREE`
+or `LOCKED(owner)`. One owner, never two.
+
+- **Acquire**: `requestCameraControl()` grants if `FREE`. If `LOCKED`, it
+  preempts (last-request-wins): the requester becomes owner and the displaced
+  owner receives `cameraRevoked` with reason `preempted`.
+- **Lease**: granted for 10 seconds. Any camera command (`flyTo`, `jumpTo`, or
+  `fitBounds`) from the owner renews the lease automatically. No heartbeat
+  message.
+- **Release — any one of six triggers reclaims the map:**
+  1. widget calls `releaseCameraControl()` → reason `released`;
+  2. lease TTL expires (catches a hung widget) → reason `ttl`;
+  3. worker dies, disables, or uninstalls (catches a crashed widget) — no
+     notification possible;
+  4. the user drags, zooms, or scrolls the map → reason `userGesture`;
+  5. another widget calls `requestCameraControl()` → reason `preempted`;
+  6. another widget issues `flyTo`, `jumpTo`, or `fitBounds` → reason
+     `preempted`.
 - **UI**: a "Camera: <widget name>" badge with a manual release button while
   locked.
 
@@ -363,7 +445,8 @@ Startup reads the registry and re-enables every `enabled` widget (fetch manifest
 merges into `anymaps.state.<widgetId>`; the main thread writes. The worker never
 touches storage. An `iid` is just a key inside state: after creating a room the
 widget calls `anymaps.persist({ iid: token })`; on reload it reads
-`init.state.iid`.
+`init.state.iid`. Joining a room is the same: the widget writes a token the user
+entered into `state.iid`. Possession of the token is the access boundary.
 
 ### 7.10 Lifecycle and cleanup
 
@@ -392,6 +475,11 @@ Client read cadence and interpolation are the widget's own responsibility.
 HTTP short-polling plus client-side interpolation between the last two polled
 positions gives smooth motion. Guidance: default 5 seconds, minimum 1 second.
 
+Flights poll the ADSB.lol cache every 5 seconds and interpolate marker positions
+between polls. A selected plane's trail comes from the server series cache via
+`?ids=`; the widget draws the polyline in the order the server returns it
+(ascending time).
+
 ---
 
 ## 8. The manifest and channel model
@@ -412,7 +500,8 @@ string; the server does not host icons for the MVP), and `server`.
 
 1. One channel = one FastAPI handler = one direction. A write channel is a POST
    handler. A read channel is a GET handler. No channel does both.
-2. Channel fields: `id`, `origin`, `direction`, `visibility`.
+2. Channel fields: `id`, `origin`, `direction`, `visibility`, and the
+   accumulation fields `mode` and `retain` (client write channels only).
 3. Direction × origin matrix:
    - `client` + `write` — clients POST data (post location).
    - `client` + `read` — clients GET data others wrote (fetch friends).
@@ -421,7 +510,16 @@ string; the server does not host icons for the MVP), and `server`.
    - `external` + `write` — not allowed.
 4. `visibility` is `public` (one shared address, no token) or `private`
    (instance-scoped). It is per-channel and independent on read and write.
-5. External channels add an `external` block (section 10). A channel with a
+5. Accumulation. `mode` is `snapshot` (each write or poll replaces) or `series`
+   (each write or poll appends). `retain` is time-based retention in seconds,
+   for `series` only. Placement depends on origin:
+   - **client write channel**: top-level `mode` and `retain`. Default
+     `mode: "series"`, `retain: 3600`.
+   - **external read channel**: `mode` and `retain` live inside the `external`
+     block (section 10.1). Default `mode: "snapshot"`, `retain: 3600`.
+   - **client read channel**: no accumulation fields. It inherits from its
+     `source` write channel.
+6. External channels add an `external` block (section 10). A channel with a
    record mapping is filterable (section 11). A channel without a mapping serves
    the whole body.
 
@@ -441,6 +539,8 @@ string; the server does not host icons for the MVP), and `server`.
         "origin": "client",
         "direction": "write",
         "visibility": "private",
+        "mode": "series",
+        "retain": 3600,
         "record": { "id": "clientId", "lat": "lat", "lon": "lng", "time": "ts" }
       },
       {
@@ -455,10 +555,12 @@ string; the server does not host icons for the MVP), and `server`.
 }
 ```
 
-The write channel `fmfW` declares the record mapping (what each posted payload
-looks like). The read channel `fmfR` declares no mapping of its own; its
-`source` field references `fmfW`, so it serves `fmfW`'s data through the same
-filter surface.
+The write channel `fmfW` declares the record mapping and accumulates a series
+with one hour of retention. The read channel `fmfR` declares no mapping of its
+own; its `source` field references `fmfW`, so it serves `fmfW`'s data through
+the same filter surface. Extra fields in a posted record (for example `name` and
+`icon` for the member's display name and avatar) are stored and returned whole;
+they do not need their own mapping.
 
 ---
 
@@ -479,6 +581,10 @@ Provisioning happens once per widget, not once per client.
 
 A client creates an instance ("room") to get an instance token. The token scopes
 all private channels of that widget. Friends share the token out of band.
+"Joining" a room means entering an existing token into the widget; there is no
+separate join flow. "Leaving" a room means clearing the token from state and
+stopping writes. Old token data stays in SQLite until the server restarts; no
+DELETE route exists for the MVP.
 
 ### 9.3 Worked example — C1, C2, C3
 
@@ -528,7 +634,7 @@ returns only the caller's token's payloads.
   "interval": 60,
   "mode": "snapshot",
   "retain": 3600,
-  "record": { "records": "states", "id": "[0]", "time": "[3]", "lon": "[5]", "lat": "[6]" }
+  "record": { "records": "states", "id": "[0]", "time": "@ingestedAt", "lon": "[5]", "lat": "[6]" }
 }
 ```
 
@@ -541,7 +647,8 @@ Field rules:
   as JSON). POST only.
 - `auth`: the single secret entry point. `type` is `header` or `query`. `name`
   is the header or query-param name. `scheme` is the optional `Bearer ` prefix.
-  `secret` is the store ID. Omit for public sources.
+  `secret` is the store ID. Omit for public sources. OAuth2 client-credentials
+  is out of scope for the MVP.
 - `interval`: refresh seconds. Default 60, minimum 5.
 - `mode`: `snapshot` (replace each poll) or `series` (append each poll). Default
   `snapshot`.
@@ -549,36 +656,51 @@ Field rules:
 - `record`: optional record mapping (section 11). No mapping means the whole
   body is served as-is (for small single-object sources).
 
+**Server-stamped time.** `record.time` accepts one reserved value:
+`"@ingestedAt"`. It means the server's fetch timestamp, in epoch seconds. The
+server stamps every cached record internally at fetch time and uses that stamp
+for the `time` index (for `since`, `until`, `latest`, and retention pruning).
+The returned record is unchanged; the stamp is index-only, so the server still
+never transforms data. Use `@ingestedAt` when the source provides no per-record
+epoch time of its own. Anywhere `record.time` is declared, `@ingestedAt` is
+valid.
+
 ### 10.2 Cache-only reads
 
 A client read on an external channel hits only the local cache. It never
 triggers an external fetch. Only the poller touches the external API. The poller
 is configured at provisioning from the manifest.
 
-### 10.3 Worked example — OpenSky flight positions (array of arrays)
+### 10.3 Worked example — ADSB.lol flights (flights_nyc)
 
-OpenSky returns `{ "time": ..., "states": [ [icao24, callsign, country,
-time_position, last_contact, lon, lat, ...], ... ] }`. Fields are positional,
-so JMESPath uses indices: `0` = icao24, `3` = time_position, `5` = longitude,
-`6` = latitude.
+ADSB.lol is free and needs no auth. `GET /v2/point/{lat}/{lon}/{radius}` returns
+aircraft within a circle, radius in nautical miles, maximum 250. The response is
+`{ "ac": [ { "hex": "...", "flight": "...", "r": "...", "t": "...", "lat": ...,
+"lon": ..., "alt_baro": ..., "gs": ..., "track": ... }, ... ] }`. It has no
+per-record epoch timestamp, so the channel uses `@ingestedAt`.
 
 ```json
 {
-  "id": "flights_position",
+  "id": "flights_nyc",
   "origin": "external",
   "direction": "read",
   "visibility": "public",
   "external": {
     "method": "GET",
-    "url": "https://opensky-network.org/api/states/all",
-    "query": { "lamin": "40.0", "lomin": "-75.0", "lamax": "41.0", "lomax": "-73.0" },
-    "interval": 15,
+    "url": "https://api.adsb.lol/v2/point/40.71/-74.0/250",
+    "interval": 5,
     "mode": "series",
     "retain": 3600,
-    "record": { "records": "states", "id": "[0]", "time": "[3]", "lon": "[5]", "lat": "[6]" }
+    "record": { "records": "ac", "id": "hex", "lat": "lat", "lon": "lon", "time": "@ingestedAt" }
   }
 }
 ```
+
+The widget reads `?bounds=...&latest=1` for current planes in the viewport and
+`?ids=<hex>` for one plane's trail. Available fields for the info panel:
+`flight` (callsign, usually the flight number), `r` (registration), `t`
+(aircraft type), `alt_baro` (altitude), `gs` (ground speed), `track` (heading,
+used for marker rotation). There is no origin or destination.
 
 ### 10.4 Worked example — Overpass bathrooms (POST, raw body, GeoJSON)
 
@@ -591,7 +713,7 @@ so JMESPath uses indices: `0` = icao24, `3` = time_position, `5` = longitude,
   "external": {
     "method": "POST",
     "url": "https://overpass-api.de/api/interpreter",
-    "body": "[out:json];node[\"amenity\"=\"toilets\"](40.5,-74.3,40.9,-73.7);out;",
+    "body": "[out:json];node[\"amenity\"=\"toilets\"](40.47,-74.26,40.92,-73.70);out;",
     "interval": 86400,
     "mode": "snapshot",
     "record": { "records": "elements", "id": "id", "lat": "lat", "lon": "lon" }
@@ -599,9 +721,16 @@ so JMESPath uses indices: `0` = icao24, `3` = time_position, `5` = longitude,
 }
 ```
 
-Overpass returns `{ "elements": [ { "id": 123, "lat": 40.7, "lon": -73.9,
-"tags": {...} }, ... ] }`. No `time` field, so this channel supports `bounds`
-and `ids` filters only.
+The body queries the whole 5-borough New York City box once. The cache is
+broad; the widget re-reads with `?bounds=` on `viewportChanged` to show only the
+visible bathrooms. Overpass returns `{ "elements": [ { "id": 123, "lat": 40.7,
+"lon": -73.9, "tags": {...} }, ... ] }`. No `time` field, so this channel
+supports `bounds` and `ids` filters only.
+
+The water-fountains demo widget is structurally identical with one tag change:
+`node["amenity"="drinking_water"](40.47,-74.26,40.92,-73.70);`. The wizard
+resolves the exact tag by asking the user (drinking point vs decorative
+fountain) at creation time.
 
 ### 10.5 Worked example — OpenWeatherMap (GET, query auth, no mapping)
 
@@ -638,7 +767,8 @@ next interval. It never blanks the cache on an upstream error.
 ### 10.8 SSRF safety
 
 The manifest controls the fetch URL, so the server must not become an open
-proxy. Rules: https-only, and reject private and loopback IP ranges.
+proxy. Rules: https-only, and reject private and loopback IP ranges. The Agent
+Service applies the same rules when it fetches a candidate source to test it.
 
 ---
 
@@ -658,12 +788,13 @@ extracts exactly four fields for indexing — identity, latitude, longitude, tim
 
 - `records`: JMESPath to the array, external channels only.
 - `id`, `lat`, `lon`, `time`: JMESPath within each element (or within the posted
-  object for client write channels). All optional.
+  object for client write channels). All optional. `time` also accepts the
+  reserved value `@ingestedAt` (section 10.1).
 - A field not declared means the corresponding filter is unavailable on that
   channel.
 
-The mapping language is JMESPath because positional arrays like OpenSky's
-(`[0]`, `[6]`) cannot be expressed with dot-paths.
+The mapping language is JMESPath because positional arrays like some flight
+sources use `[0]`-style paths that cannot be expressed with dot-paths.
 
 ### 11.3 Where the mapping lives
 
@@ -686,22 +817,33 @@ Query parameters on read GET requests:
 Field requirements: `bounds` needs `lat` + `lon`; `ids` needs `id`;
 `since`/`until` need `time`; `latest` needs `id` + `time`.
 
+**Composition order.** When multiple filters are present, the server applies
+`latest` first (dedupe to the newest record per identity), then applies
+`bounds`, `ids`, `since`, and `until` to that set. This makes "current positions
+within a viewport" one call: `?bounds=...&latest=1`.
+
 ### 11.5 Accumulation
 
-- `snapshot`: each poll replaces the cache. One record per entity. Good for
-  current flights, bathrooms.
-- `series`: each poll appends. Multiple records per identity accumulate. Enables
-  history and paths. Bounded by `retain` (default one hour).
+- `snapshot`: each write or poll replaces the cache. One record per entity. Good
+  for current bathrooms.
+- `series`: each write or poll appends. Multiple records per identity accumulate.
+  Enables history and paths. Bounded by `retain` (default one hour).
 
 `latest` dedupes a series cache to the current state. `since`/`until` slices
-history.
+history. Reads on a channel with a `time` mapping return records in ascending
+time order, so a widget can draw a trail by connecting points in the returned
+order.
+
+Client write channels carry top-level `mode` and `retain` (section 8.3).
+External channels carry them inside the `external` block (section 10.1).
 
 ### 11.6 Worked example — filter queries
 
-OpenSky channel from section 10.3:
+Flights channel (`flights_nyc`, series) from section 10.3:
 
-- All flights in a box, current: `?bounds=40.0,-75.0,41.0,-73.0`
-- One flight's history: `?ids=abc123`
+- Current planes in a viewport: `?bounds=40.5,-74.3,40.9,-73.7&latest=1`
+- One plane's full trail: `?ids=abc123`
+- One plane's recent trail: `?ids=abc123&since=...`
 
 Find My Friends channel from section 8.4:
 
@@ -717,7 +859,8 @@ Overpass bathrooms from section 10.4:
 The server selects subsets only: filter by identity, bounds, time, latest-per-id.
 It never joins, aggregates, computes, or reshapes. Every record is returned
 whole. Any aggregation a widget needs — counts, averages, projections — happens
-in the client worker.
+in the client worker. The one exception is the internal `@ingestedAt` stamp,
+which is index-only and never changes the returned record.
 
 ---
 
@@ -740,6 +883,9 @@ feel underwhelms; the manifest does not change.
 | `/widgets/{id}/channels/{channelId}` | GET/POST | Public channel read/write |
 | `/widgets/{id}/channels/{channelId}/instances/{token}` | GET/POST | Private channel read/write |
 | `/secrets` | POST | Store a secret → secret ID |
+
+There is no DELETE route. Leaving a room is client-side (clear the token from
+state and stop writing). Orphaned rows persist until server restart.
 
 ### 12.2 Secrets
 
@@ -765,18 +911,28 @@ the same single Docker Compose service. No second service.
 - **Icon storage**: external URL string in the manifest. The server does not
   host icons.
 
+The wizard publishes through the same `POST /widgets`. When the wizard returns a
+new `id + version`, the client fetches the manifest and bundle and enables the
+widget automatically.
+
 ---
 
 ## 14. Out of scope for the MVP
 
 - Heatmap (stretch).
 - Routing engine (use a Google Maps link instead).
-- AI assistant (stretch).
+- OAuth2 client-credentials auth for external sources. This is why the demo uses
+  ADSB.lol instead of OpenSky.
+- Anchored popups tracking a moving marker. The flights widget shows selected
+  plane info in the side panel instead.
+- Dynamic server-side viewport templating. The demo uses a broad fixed cache
+  plus a client `bounds` filter.
 - Pagination, cursor and Link-header variants.
 - WebSocket transport.
 - Per-widget server isolation — one generic server covers all widgets.
 - Membership lists or ACLs beyond capability tokens.
 - Private external caches (external channels are public-read only).
+- Deleting instances or widget versions.
 
 ---
 
@@ -793,12 +949,14 @@ interfaces separately. Fix both with one move: freeze the shape first.
 ### 15.2 Three columns, one owner each
 
 - **Column A — Client + SDK.** WidgetManager, worker lifecycle, MapLibre
-  integration, camera lease, event routing. Owns the render contract. First
-  deliverable: a mock SDK that answers the frozen signatures, then the real one.
+  integration, camera lease, geolocation proxy, event routing. Owns the render
+  contract. First deliverable: a mock SDK that answers the frozen signatures,
+  then the real one.
 - **Column B — Server + Registry.** FastAPI + SQLite, channels, poller, filter,
   secrets, publish and install. Owns the wire contract.
-- **Column C — Widgets + demo.** The three to four demo widgets, gallery and
-  install UI, the second-user demo. Owns the data-config contract with B.
+- **Column C — Widgets, wizard, and demo.** The three demo widgets, the gallery
+  and install UI, the wizard panel, the second-user demo. Owns the data-config
+  contract with B.
 
 ### 15.3 Dependencies, and why no one idles
 
@@ -815,10 +973,9 @@ interfaces separately. Fix both with one move: freeze the shape first.
 2. **Hour 2–8** — build in parallel. Walking skeleton by hour 3: one widget
    draws on the map, with the server behind it.
 3. **Hour 8–14** — integrate. Wire realtime and polled flows. Build the publish
-   → install → run demo. Simulate the second user in a second browser.
+   → install → run demo. Simulate the second user in a second browser. Build the
+   wizard: prompt, clarify, test source, generate, publish, auto-install.
 4. **Hour 14–16** — rehearse, cut.
-5. **Stretch, only if ahead** — AI assistant. Column C leads; it generates
-   manifest + config + bundle, which the declarative design makes LLM-friendly.
 
 ---
 
@@ -827,14 +984,21 @@ interfaces separately. Fix both with one move: freeze the shape first.
 - **Widget** — a self-contained map extension: manifest + JS bundle.
 - **SDK** — the typed command/event boundary between widgets and the Map Client.
 - **WidgetManager** — main-thread runtime that owns registry, workers, events,
-  map, and DOM.
+  map, DOM, geolocation, and the camera lease.
 - **Generic Widget Server** — the single, dumb, config-driven backend.
+- **Agent Service** — the second Compose service that generates widgets from a
+  prompt and publishes them.
+- **Wizard panel** — the built-in client chat UI that talks to the Agent Service.
 - **Registry** — the store and gallery for published widgets, inside the server.
 - **Channel** — one endpoint, one direction, one handler.
 - **Instance** — a room token scoping private channel data; possession = access.
 - **External channel** — server fetches an outside source, caches, serves reads.
 - **Client channel** — clients write; clients read what was written.
 - **Record mapping** — the declared JMESPath locations of id, lat, lon, time.
-- **Snapshot** — cache replaces each poll.
-- **Series** — cache appends each poll, bounded by retention.
-- **Camera lease** — time-boxed, auto-releasing camera control.
+- **Snapshot** — cache replaces each write or poll.
+- **Series** — cache appends each write or poll, bounded by retention.
+- **Camera lease** — time-boxed, auto-releasing follow control.
+- **Pan** — a one-shot camera move (`flyTo`, `jumpTo`, `fitBounds`), no lease.
+- **Follow** — continuous camera centering under the lease.
+- **`@ingestedAt`** — the reserved `record.time` value for the server's fetch
+  timestamp.
