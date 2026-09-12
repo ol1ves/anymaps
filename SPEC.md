@@ -7,8 +7,9 @@ settled; nothing is left to be recovered from chat history.
 Status legend:
 
 - ✅ **Decided** — locked. Build to this.
-- ⚠️ **To freeze at build start** — the shape is agreed, but exact field names or
-  payload schemas are written in `CONTRACTS.md` in the first build session.
+- **CONTRACTS.md** — the authoritative wire contract: message envelope,
+  command and event payloads, the `anymaps` API, the manifest schema, and the
+  HTTP route table. Build against it.
 
 ---
 
@@ -192,35 +193,140 @@ The unit of privacy. A private channel's data is scoped to an instance token
 ### 7.1 Execution model
 
 A widget's JS bundle runs in a dedicated Web Worker. The worker has no access to
-the map, the DOM, or `window`. Everything crosses the SDK boundary as messages.
+the map, the DOM, `window`, or `localStorage`. Everything crosses the SDK
+boundary as messages over `postMessage`.
 
-- **Widget → Map**: render commands sent over `postMessage`.
-- **Map → Widget**: events sent over `postMessage`.
+- **Widget → Map**: render commands.
+- **Map → Widget**: events.
 
-### 7.2 Render command surface (MVP)
+The SDK library is named **`anymaps`**. Widget authors and agents write against
+`anymaps.addMarker(...)`, never against raw `postMessage`. The exact wire format
+lives in `CONTRACTS.md`.
 
-Imperative, typed commands. Each command maps one-to-one to a MapLibre
-operation. ⚠️ Exact payload field names are frozen in `CONTRACTS.md` at build
-start; the operations below are settled.
+### 7.2 Message envelope
 
-1. **Markers** — add, update, remove. Static points (bathrooms), moving points
-   (friends, planes).
-2. **Polylines** — add, update, remove. Flight paths and movement trails.
-3. **Popups** — open, close, set content (text or HTML). The Google Maps
-   directions link renders inside popup HTML.
-4. **Events** — marker click and map click, dispatched to the owning widget.
-5. **Info panel** — set the side-bar content a widget controls.
-6. **Heatmap** — stretch goal only (bathroom density).
+Every message is a discriminated object:
 
-**Out of scope**: routing. Use a Google Maps directions link inside a popup.
+```json
+{ "v": 1, "kind": "cmd", "id": "c1", "name": "addMarker", "payload": { } }
+{ "v": 1, "kind": "event", "name": "markerClick", "payload": { "markerId": "m1" } }
+{ "v": 1, "kind": "error", "id": "c1", "error": "marker missing position" }
+```
 
-### 7.3 Ownership and event routing
+- `kind` is `init`, `cmd`, `event`, or `error`.
+- Commands are fire-and-forget. They carry an `id`; the main thread echoes it in
+  an `error` message when a command is malformed. Errors never crash the widget.
+- Events carry no `id`.
 
-- Widgets assign their own unique string IDs to the things they draw. The SDK
-  uses these IDs for update, remove, and events.
-- A click on any widget-owned item automatically dispatches to that widget.
+### 7.3 Bootstrap
 
-### 7.4 Camera control (lease model)
+On enable, WidgetManager provisions the widget's channels, then posts one `init`
+message:
+
+```json
+{
+  "kind": "init", "protocolVersion": 1, "widgetId": "find-my-friends",
+  "baseUrl": "https://server.example",
+  "channelRoutes": { "fmfW": "...", "fmfR": "..." },
+  "state": { "iid": "x" }
+}
+```
+
+- `channelRoutes` maps each channel ID to its route prefix.
+- `state` is the persisted state object from `localStorage` (section 7.9). It is
+  `{}` on first run.
+- The worker fetches its own data with native `fetch` against those routes. The
+  main thread never proxies HTTP.
+- The widget creates its own room via `POST /widgets/{id}/instances` and appends
+  `/instances/{token}` to private routes.
+- The server sets CORS to allow the app origin.
+- WidgetManager rejects a bundle whose `protocolVersion` it does not support.
+
+### 7.4 Render commands — payloads
+
+Coordinate order: the SDK uses `lat` and `lng` everywhere. MapLibre wants
+`[lng, lat]` (GeoJSON order) internally; the SDK translates. Authors never see
+MapLibre's ordering.
+
+**Markers:**
+
+```json
+{ "id": "b42", "lat": 40.71, "lng": -74.0, "icon": "🚻", "color": "#0066ff", "label": "open", "title": "Public restroom" }
+```
+
+- `addMarker`: `id`, `lat`, `lng`, optional `icon` (emoji or image URL),
+  `color`, `label` (badge text), `title` (hover tooltip).
+- `updateMarker`: `id` plus any changed fields.
+- `removeMarker`: `id` only.
+
+**Polylines:**
+
+```json
+{ "id": "trail-1", "points": [[40.7, -74.0], [40.8, -74.1]], "color": "#ff0000", "width": 3 }
+```
+
+- `addPolyline`: `id`, `points`, optional `color`, `width`.
+- `updatePolyline`: `id` plus `points` (replace the whole path) or `append` (add
+  points to the end, for trails), plus optional `color`, `width`.
+- `removePolyline`: `id` only.
+
+**Popups:**
+
+```json
+{ "id": "p1", "content": "<a href='...'>Directions</a>", "lat": 40.71, "lng": -74.0 }
+```
+
+- `openPopup`: `id`, `content`, and either `lat`/`lng` (standalone) or
+  `anchorMarkerId` (anchored to a marker).
+- `closePopup`: `id`.
+- `setPopupContent`: `id` + `content`.
+
+**Panel** — one shared panel per widget:
+
+```json
+{ "title": "Nearby", "content": "<ul><li>3 restrooms open</li></ul>" }
+```
+
+- `setPanel`: `title` and `content`. `clearPanel`: nothing.
+- `content` is raw HTML in popups and panels. No sanitization. Trust = the user
+  installed the widget.
+
+**Camera:**
+
+```json
+{ "name": "requestCameraControl", "payload": {} }
+{ "name": "releaseCameraControl", "payload": {} }
+{ "name": "flyTo", "payload": { "center": [40.71, -74.0], "zoom": 12, "bearing": 90 } }
+{ "name": "fitBounds", "payload": { "bounds": [[40.5, -74.3], [40.9, -73.7]] } }
+```
+
+- `flyTo.center` is `[lat, lng]`. `fitBounds.bounds` is
+  `[[south, west], [north, east]]`.
+
+### 7.5 Events
+
+```json
+{ "name": "markerClick", "payload": { "markerId": "b42" } }
+{ "name": "mapClick", "payload": { "lat": 40.71, "lng": -74.0 } }
+{ "name": "cameraGranted", "payload": {} }
+{ "name": "cameraDenied", "payload": {} }
+{ "name": "cameraRevoked", "payload": { "reason": "ttl" } }
+{ "name": "viewportChanged", "payload": { "bounds": [[40.5, -74.3], [40.9, -73.7]], "center": [40.71, -74.0], "zoom": 12 } }
+```
+
+- `cameraRevoked.reason` is `ttl`, `userGesture`, or `released`.
+- `viewportChanged` fires debounced on move-end, on user drag/zoom/scroll and on
+  another widget's camera command. It is suppressed for the widget that issued
+  the command. It is advisory: the receiving widget decides whether to refetch.
+
+### 7.6 Ownership and event routing
+
+- Widgets assign their own unique string IDs to drawn items. The SDK uses these
+  IDs for update, remove, and events.
+- A click on any widget-owned item dispatches to that widget.
+- The SDK records every drawn ID per widget for cleanup (section 7.10).
+
+### 7.7 Camera lease (model)
 
 Camera control is a lease that expires. States: `FREE` or `LOCKED(owner)`. One
 owner, never two.
@@ -236,23 +342,55 @@ owner, never two.
   4. the user drags, zooms, or scrolls the map (catches everything else).
 - **UI**: a "Camera: <widget name>" badge with a manual release button while
   locked.
-- **Camera commands (MVP)**:
-  - `flyTo({center, zoom, bearing?})` — follow a moving plane.
-  - `fitBounds([southWest, northEast])` — frame a cluster of points.
 
-### 7.5 Lifecycle and concurrency
+### 7.8 CSS styling
+
+`anymaps.setStyles(cssText)` injects the CSS into a per-widget `<style>` element
+(the main thread does the DOM work). Containers carry `anymaps-panel`,
+`anymaps-popup`, and `anymaps-widget-<id>` classes. Styles inject as-is, global
+scope, because widgets are trusted. `setStyles` is the only styling channel a
+worker has.
+
+### 7.9 Persistence
+
+WidgetManager owns `localStorage`. Two key families:
+
+- `anymaps.registry` — `[{ "widgetId": "...", "version": "...", "enabled": true }]`.
+- `anymaps.state.<widgetId>` — the widget's persisted state object.
+
+Startup reads the registry and re-enables every `enabled` widget (fetch manifest
++ bundle, provision, spawn worker with `init.state`). `anymaps.persist(partial)`
+merges into `anymaps.state.<widgetId>`; the main thread writes. The worker never
+touches storage. An `iid` is just a key inside state: after creating a room the
+widget calls `anymaps.persist({ iid: token })`; on reload it reads
+`init.state.iid`.
+
+### 7.10 Lifecycle and cleanup
 
 - One dedicated Worker per enabled widget.
 - States: `installed` → `enabled` ⇄ `disabled` → `uninstalled`.
 - Disable terminates the worker; enable respawns it.
-- No hard resource caps at demo scale (three to four widgets).
+- On disable or uninstall, WidgetManager removes every marker, polyline, popup,
+  and the panel that widget created, then terminates the worker. No widget
+  cleanup command exists.
+- Persisted state survives disable (re-enable resumes the same `iid`). Uninstall
+  deletes the registry entry and the state key.
+- No hard resource caps at demo scale.
 
-### 7.6 Smooth motion
+### 7.11 UI arbitration
 
-Client read cadence and interpolation are the widget's own responsibility, not
-an SDK feature. HTTP short-polling plus client-side interpolation between the
-last two polled positions gives smooth motion without push. Guidance: default 5
-seconds, minimum 1 second for client reads and writes.
+- **Popups**: one open globally. Opening a new popup closes the previous,
+  across widgets.
+- **Panels**: one collapsible section per widget, stacked vertically in a
+  shared scrollable sidebar. No overlap.
+- **Z-order**: default by enable order — later-enabled widgets draw on top. No
+  click-to-front for the MVP.
+
+### 7.12 Smooth motion
+
+Client read cadence and interpolation are the widget's own responsibility.
+HTTP short-polling plus client-side interpolation between the last two polled
+positions gives smooth motion. Guidance: default 5 seconds, minimum 1 second.
 
 ---
 
@@ -649,14 +787,8 @@ interfaces separately. Fix both with one move: freeze the shape first.
 
 ### 15.1 Freeze contracts first (hour 0–2, together)
 
-Resolve the ⚠️ items into one `CONTRACTS.md`:
-
-1. SDK command and event signatures — markers, polylines, popups, panels,
-   camera, events.
-2. Exact render-command payload field names.
-3. Wire protocol message shapes and the route table from section 12.
-
-After hour 2, no signature changes without a 30-second group sync.
+`CONTRACTS.md` is written and is the build target. Review it together in hour
+0–2, then no signature changes without a 30-second group sync.
 
 ### 15.2 Three columns, one owner each
 
