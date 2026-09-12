@@ -434,3 +434,52 @@ JSON body `{ "error": "message" }`.
 
 Errors never crash a widget. An invalid render command returns an `error`
 message on the SDK channel, not an exception.
+
+---
+
+## 15. Wizard API (Agent Service)
+
+The wizard panel (client) talks to the Agent Service. Multi-turn, stateless:
+the panel resends the full transcript on every turn. No streaming.
+
+| route | method | request | response |
+|-------|--------|---------|----------|
+| `/wizard/generate` | POST | `{ "messages": [ { "role": "...", "content": "..." } ] }` | clarifying or done, below |
+
+`messages` is a non-empty array. `role` is `user` or `assistant`. The first
+call holds one user message. On later calls the panel resends the whole
+transcript: the service's questions appear as `assistant` messages, the user's
+answers as `user` messages.
+
+Clarifying response, when the service needs more input:
+
+```json
+{ "done": false, "questions": [ "Drinking water (amenity=drinking_water) or decorative fountains (amenity=fountain)?" ] }
+```
+
+`questions` always holds exactly one item for the MVP.
+
+Done response, when the service has generated and published the widget:
+
+```json
+{ "done": true, "widgetId": "water-fountains-nyc", "version": "0.1.0", "manifest": { } }
+```
+
+Rules:
+
+- When `done` is true, the service has already published the manifest and
+  bundle with `POST /widgets` on the generic server. `widgetId` and `version`
+  identify them there.
+- The client then fetches `/widgets/{id}/versions/{version}/manifest` and
+  `/bundle` and enables the widget. This is the same install path as demo 2.
+- The service generated the manifest against
+  `contracts/manifest.schema.json`.
+- The service tested the candidate source before generating: https-only and
+  the SSRF rules of section 10.8. A blocked source returns `400` with
+  `{ "error": "source blocked by SSRF rules" }`.
+- The service never runs widget code.
+- The panel shows a busy state while waiting. Budget under 60 seconds per
+  turn. Use a cheap model.
+
+Errors: `400` malformed messages or a blocked source, `500` generation or
+publish failure. Body shape `{ "error": "message" }`.

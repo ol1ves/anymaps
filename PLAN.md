@@ -4,6 +4,16 @@ Status: approved. This file is the operating plan. SPEC.md and CONTRACTS.md
 are the build targets. No decision in those files changes without a 30-second
 group sync. H+0 is the moment this plan is approved.
 
+## 0. Hour-0 status
+
+- Wizard API contract: done. CONTRACTS.md section 15.
+- `contracts/manifest.schema.json`: done.
+- JavaScript decision: done. Recorded in README.md.
+- Environment facts: LLM key open. ADSB.lol and Overpass both answered 200
+  from the dev machine.
+- Repo scaffold: done. Client, server, and agent hello-worlds run. `pytest`
+  passes on shared and server tests.
+
 ## 1. Team
 
 Three owners. Not three equal slices. All three demo criteria touch the client
@@ -50,8 +60,7 @@ anymaps/
 ├── SPEC.md  CONTRACTS.md  PLAN.md
 ├── docker-compose.yml          B owns (server + agent services)
 ├── contracts/                  frozen after hour 0
-│   ├── manifest.schema.json
-│   └── wizard-api.md
+│   └── manifest.schema.json
 ├── shared/                     B owns
 │   ├── ssrf.py                 same rules for poller and source test
 │   └── schema.py               loads the manifest schema

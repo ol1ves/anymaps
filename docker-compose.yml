@@ -1,0 +1,21 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      DATABASE_PATH: /data/anymaps.db
+
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      SERVER_URL: http://server:8000
+      WIZARD_LLM_API_KEY: ${WIZARD_LLM_API_KEY:-}

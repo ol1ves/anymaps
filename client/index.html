@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anymaps</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: system-ui, sans-serif;
+      }
+      #app {
+        display: flex;
+        height: 100%;
+      }
+      #map {
+        flex: 1;
+        min-width: 0;
+      }
+      #sidebar {
+        width: 320px;
+        border-left: 1px solid #ccc;
+        padding: 12px;
+        overflow-y: auto;
+        box-sizing: border-box;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="map"></div>
+      <div id="sidebar">
+        <h1>anymaps</h1>
+        <p>Hello world. The WidgetManager sidebar lands here.</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

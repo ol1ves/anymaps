@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+httpx
+jsonschema
+jinja2

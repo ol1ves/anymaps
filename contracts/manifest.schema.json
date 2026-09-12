@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anymaps.dev/schemas/manifest.schema.json",
+  "title": "anymaps widget manifest",
+  "description": "Derived from CONTRACTS.md section 7. The generic server validates against this file at publish. The Agent Service generates against it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "version", "description", "server"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "maxLength": 64,
+      "description": "unique slug"
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "description": "semver"
+    },
+    "description": { "type": "string", "minLength": 1 },
+    "icon": { "type": "string", "format": "uri", "description": "external URL string; the server does not host icons" },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channels"],
+      "properties": {
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/channel" },
+          "description": "channel ids must be unique within the widget; the server enforces this"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "recordMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "records": { "type": "string", "description": "JMESPath to the array. External channels only." },
+        "id": { "type": "string", "description": "JMESPath within each element. Enables ids and latest." },
+        "lat": { "type": "string", "description": "JMESPath within each element. Enables bounds." },
+        "lon": { "type": "string", "description": "JMESPath within each element. Enables bounds." },
+        "time": { "type": "string", "description": "JMESPath within each element, or the reserved value \"@ingestedAt\". Enables since/until and latest." }
+      }
+    },
+    "externalBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "method": { "enum": ["GET", "POST"], "default": "GET" },
+        "url": { "type": "string", "format": "uri" },
+        "query": { "type": "object", "additionalProperties": { "type": "string" }, "description": "static values only; secrets never appear here" },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" }, "description": "static values only; secrets never appear here" },
+        "body": {
+          "anyOf": [
+            { "type": "string", "description": "sent raw; covers OverpassQL and GraphQL" },
+            { "type": "object", "description": "sent as JSON" }
+          ],
+          "description": "POST only"
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "name", "secret"],
+          "properties": {
+            "type": { "enum": ["header", "query"] },
+            "name": { "type": "string", "description": "header or query-param name" },
+            "scheme": { "type": "string", "description": "optional prefix, for example \"Bearer \"" },
+            "secret": { "type": "string", "description": "secret store ID, never the value" }
+          }
+        },
+        "interval": { "type": "integer", "minimum": 5, "default": 60, "description": "refresh seconds; min 5" },
+        "mode": { "enum": ["snapshot", "series"], "default": "snapshot" },
+        "retain": { "type": "integer", "minimum": 1, "default": 3600, "description": "series only, seconds" },
+        "record": { "$ref": "#/$defs/recordMapping" }
+      }
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "origin", "direction", "visibility"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "maxLength": 64 },
+        "origin": { "enum": ["client", "external"] },
+        "direction": { "enum": ["write", "read"] },
+        "visibility": { "enum": ["public", "private"], "description": "private is instance-scoped" },
+        "source": { "type": "string", "description": "client read channels only: the write channel id" },
+        "record": { "$ref": "#/$defs/recordMapping", "description": "declared where records are produced: client write or external read" },
+        "external": { "$ref": "#/$defs/externalBlock", "description": "external read channels only" },
+        "mode": { "enum": ["snapshot", "series"], "default": "series", "description": "client write channels only" },
+        "retain": { "type": "integer", "minimum": 1, "default": 3600, "description": "client write channels only, series only" }
+      },
+      "oneOf": [
+        {
+          "description": "client write: clients POST records",
+          "properties": {
+            "origin": { "const": "client" },
+            "direction": { "const": "write" }
+          },
+          "required": ["origin", "direction"],
+          "not": { "anyOf": [{ "required": ["source"] }, { "required": ["external"] }] }
+        },
+        {
+          "description": "client read: clients GET records; source references the write channel",
+          "properties": {
+            "origin": { "const": "client" },
+            "direction": { "const": "read" }
+          },
+          "required": ["origin", "direction", "source"],
+          "not": { "anyOf": [{ "required": ["record"] }, { "required": ["external"] }, { "required": ["mode"] }, { "required": ["retain"] }] }
+        },
+        {
+          "description": "external read: clients GET the poller's cache",
+          "properties": {
+            "origin": { "const": "external" },
+            "direction": { "const": "read" }
+          },
+          "required": ["origin", "direction", "external"],
+          "not": { "anyOf": [{ "required": ["source"] }, { "required": ["mode"] }, { "required": ["retain"] }] }
+        }
+      ]
+    }
+  }
+}
