@@ -54,6 +54,24 @@ function addLayer(ctx, widgetId, id, data, color, width) {
   });
 }
 
+// Re-add every widget polyline after a basemap style swap. MapLibre
+// setStyle() destroys all client sources and layers, so theme.js calls this
+// once the new style has loaded. It also restores enable-order z-order
+// (later-enabled widgets draw on top).
+function reapply(ctx) {
+  const m = ctx.map;
+  for (const [widgetId, store] of stores) {
+    for (const [id, rec] of store) {
+      if (m.getSource(rec.sourceId)) continue; // already present, no swap
+      addLayer(ctx, widgetId, id, toGeoJSON(rec.points), rec.color, rec.width);
+    }
+  }
+  const ids = [...stores.keys()].sort(
+    (a, b) => ctx.widgetOrder(a) - ctx.widgetOrder(b),
+  );
+  for (const widgetId of ids) ctx.reorder(widgetId);
+}
+
 export function register(ctx) {
   ctx.registerCommand("addPolyline", (payload, widgetId) => {
     const err = validateAdd(payload);
@@ -147,4 +165,7 @@ export function register(ctx) {
       if (m.getLayer(layerId)) m.moveLayer(layerId);
     }
   };
+
+  // Expose for theme.js so polylines survive a basemap style swap.
+  ctx.reapplyPolylines = () => reapply(ctx);
 }

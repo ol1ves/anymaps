@@ -404,6 +404,8 @@ or `LOCKED(owner)`. One owner, never two.
   click-to-front in the MVP.
 - **CSS**: containers carry `anymaps-panel`, `anymaps-popup`, and
   `anymaps-widget-<id>` classes. Styles inject via `setStyles`, global scope.
+  The shell sets `data-theme="light|dark"` on `<html>`; widgets opt into dark
+  mode with their own `[data-theme="dark"]` selectors.
 - **User location dot**: WidgetManager draws and updates a native dot while a
   geolocation watch is active. It is not a widget marker.
 

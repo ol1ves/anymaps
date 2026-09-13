@@ -19,8 +19,14 @@ import { register as registerGeo } from "./geo.js";
 import { register as registerInstall } from "./install.js";
 import { register as registerGallery } from "./ui/gallery.js";
 import { register as registerWizard } from "./ui/wizard.js";
+import {
+  register as registerTheme,
+  mapStyleFor,
+  resolveTheme,
+} from "./ui/theme.js";
 
-// Basemap: OpenFreeMap "bright" (free, no key, vector, streets + labels).
+// Basemap: OpenFreeMap (free, no key, vector). Theme picks the style:
+// bright (light) or liberty (dark). See src/ui/theme.js.
 const NYC = { lat: 40.71, lng: -74.0 };
 
 // Compact attribution: a small ⓘ that expands to the required license links.
@@ -92,9 +98,10 @@ function makeBus() {
 }
 
 export function createManager() {
+  const initialTheme = resolveTheme();
   const map = new maplibregl.Map({
     container: "map",
-    style: "https://tiles.openfreemap.org/styles/bright",
+    style: mapStyleFor(initialTheme),
     center: [NYC.lng, NYC.lat],
     zoom: 12,
     pitch: 0,
@@ -190,6 +197,7 @@ export function createManager() {
   registerInstall(ctx);
   registerGallery(ctx);
   registerWizard(ctx);
+  registerTheme(ctx);
 
   function postError(worker, id, error) {
     worker.postMessage({ v: 1, kind: "error", id, error });
