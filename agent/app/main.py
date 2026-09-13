@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from shared.schema import load_manifest_schema
 from .generator import (
+    MAX_EXTERNAL_SOURCES,
     publish_widget,
     store_secret,
     test_candidate_sources,
@@ -115,10 +116,21 @@ class Message(BaseModel):
     content: str = Field(min_length=1, max_length=MAX_CONTENT_CHARS)
 
 
+class SecretBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=128)
+    secretId: str = Field(min_length=1, max_length=256)
+    shape: dict[str, Any] | None = None
+
+
 class WizardRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     messages: list[Message] = Field(min_length=1, max_length=MAX_MESSAGES)
+    secrets: list[SecretBinding] = Field(
+        default_factory=list, max_length=MAX_EXTERNAL_SOURCES
+    )
 
 
 class ClarifyingResponse(BaseModel):
@@ -136,6 +148,32 @@ class WizardSecretRequest(BaseModel):
     value: str = Field(min_length=1, max_length=4096)
     source: SourceSpec
     auth: SecretAuthSpec
+
+
+class PlanSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=128)
+    method: Literal["GET", "POST"] = "GET"
+    url: str = Field(min_length=1)
+    query: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str | dict[str, Any] | None = None
+    auth: SecretAuthSpec | None = None
+
+
+class PlanPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    proposal: str = Field(min_length=1)
+    sources: list[PlanSource] = Field(min_length=1, max_length=MAX_EXTERNAL_SOURCES)
+
+
+class PlanResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    done: Literal[False]
+    plan: PlanPayload
 
 
 app = FastAPI(title="anymaps agent service")
@@ -172,14 +210,14 @@ def health() -> dict[str, str]:
 
 
 @app.post("/wizard/secrets", status_code=201)
-async def verify_and_store_secret(request: WizardSecretRequest) -> dict[str, str]:
+async def verify_and_store_secret(request: WizardSecretRequest) -> dict[str, Any]:
     """Verify one key against its source, then store it in the generic server."""
 
     try:
         verification_source = source_with_secret(
             request.source, request.auth, request.value
         )
-        await test_source(verification_source)
+        shape = await test_source(verification_source)
     except SourceBlockedError as exc:
         raise HTTPException(status_code=400, detail="source blocked by SSRF rules") from exc
     except SourceTestError as exc:
@@ -194,11 +232,18 @@ async def verify_and_store_secret(request: WizardSecretRequest) -> dict[str, str
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"secretId": secret_id}
+    return {"secretId": secret_id, "shape": shape}
 
 
 def _transcript_size(messages: list[Message]) -> int:
     return sum(len(message.content) for message in messages)
+
+
+def _dump_model(model: BaseModel) -> dict[str, Any]:
+    try:
+        return model.model_dump()
+    except AttributeError:  # Pydantic 1 compatibility
+        return model.dict()
 
 
 def _parse_model_response(payload: dict[str, Any]) -> dict[str, Any]:
@@ -208,6 +253,14 @@ def _parse_model_response(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("model returned invalid wizard JSON")
 
     if payload["done"] is False:
+        if "plan" in payload:
+            try:
+                parsed = PlanResponse.model_validate(payload)
+            except AttributeError:  # Pydantic 1 compatibility
+                parsed = PlanResponse.parse_obj(payload)
+            except ValidationError as exc:
+                raise ValueError("model returned an invalid plan") from exc
+            return {"done": False, "plan": parsed.plan}
         try:
             try:
                 parsed = ClarifyingResponse.model_validate(payload)
