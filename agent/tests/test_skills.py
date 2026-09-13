@@ -33,3 +33,9 @@ def test_wizard_flow_skill_guides_secrets():
     body = skills.load_skill_body(skills.WIZARD_FLOW_SKILL)
     assert "Never claim an API needs no key" in body
     assert "plan.sources" in body
+
+
+def test_wizard_flow_skill_references_authoritative_sources_not_generation_contract():
+    body = skills.load_skill_body(skills.WIZARD_FLOW_SKILL)
+    assert "generation contract" not in body
+    assert "CONTRACTS.md" in body
