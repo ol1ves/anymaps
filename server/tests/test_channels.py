@@ -63,3 +63,20 @@ def test_read_inherits_source_mapping(client, db):
         params={"ids": "alice"},
     )
     assert r.status_code == 200
+
+
+def test_error_bodies_are_uniform(client, db):
+    _provision_fmf(db)
+    token = _token(client)
+    assert client.get("/widgets/nope/channels/x").json() == {"error": "channel not found"}
+    assert (
+        client.get(f"/widgets/find-my-friends/channels/fmfR/instances/{token}", params={"ids": "x"}).status_code
+        == 200
+    )
+    # bathrooms mapping has no 'time' field -> since is undeclared -> 400
+    from server.tests.conftest import BATHROOMS_MANIFEST
+
+    insert_channel(db, "nyc-bathrooms", BATHROOMS_MANIFEST["server"]["channels"][0])
+    r = client.get("/widgets/nyc-bathrooms/channels/nyc_bathrooms", params={"since": "100"})
+    assert r.status_code == 400
+    assert "error" in r.json()

@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -147,3 +148,28 @@ def test_run_swallows_fetch_errors(tmp_path):
     asyncio.run(run_once())
     assert calls == [1]
     db.close()
+
+
+def test_start_all_resumes_external_channels_on_startup(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from server.app.main import create_app
+
+    # Seed a provisioned external channel before the app starts.
+    db = connect(str(tmp_path / "t.db"))
+    channel = FLIGHTS_MANIFEST["server"]["channels"][0]
+    db.execute(
+        "INSERT INTO channels (widget_id, channel_id, config, provisioned_at) VALUES (?, ?, ?, ?)",
+        ("flights-nyc", channel["id"], json.dumps(channel), 1.0),
+    )
+    db.commit()
+    db.close()
+
+    app = create_app(str(tmp_path / "t.db"))
+
+    async def noop(widget_id, channel):
+        return None
+
+    app.state.poller._fetch_once = noop
+    with TestClient(app):
+        assert ("flights-nyc", "flights_nyc") in app.state.poller.tasks
