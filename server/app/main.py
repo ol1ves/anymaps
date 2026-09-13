@@ -4,10 +4,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import channels, db as db_module, instances, provision, registry, secrets as secrets_module
 from .poller import Poller
@@ -54,8 +55,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
     def health():
         return {"status": "ok"}
 
-    @app.exception_handler(HTTPException)
-    async def http_exception_handler(request: Request, exc: HTTPException):
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
     @app.exception_handler(RequestValidationError)

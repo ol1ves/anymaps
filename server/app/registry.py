@@ -7,7 +7,7 @@ import jsonschema
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from shared.schema import validate_manifest
+from shared.schema import ManifestChannelError, validate_channel_matrix, validate_manifest
 from .db import get_db
 
 router = APIRouter()
@@ -23,8 +23,11 @@ def publish_widget(body: PublishRequest, db=Depends(get_db)):
     manifest = body.manifest
     try:
         validate_manifest(manifest)
+        validate_channel_matrix(manifest)
     except jsonschema.ValidationError as exc:
         raise HTTPException(status_code=400, detail=f"invalid manifest: {exc.message}")
+    except ManifestChannelError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     widget_id = manifest["id"]
     version = manifest["version"]

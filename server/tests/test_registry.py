@@ -75,3 +75,27 @@ def test_unknown_version_404(client):
     r = client.get("/widgets/find-my-friends/versions/9.9.9/manifest")
     assert r.status_code == 404
     assert r.json() == {"error": "widget version not found"}
+
+
+def test_publish_rejects_duplicate_channel_ids(client):
+    bad = copy.deepcopy(FMF_MANIFEST)
+    bad["server"]["channels"].append(copy.deepcopy(bad["server"]["channels"][0]))
+    r = _publish(client, manifest=bad)
+    assert r.status_code == 400
+    assert r.json() == {"error": "duplicate channel id"}
+
+
+def test_publish_rejects_broken_source_reference(client):
+    bad = copy.deepcopy(FMF_MANIFEST)
+    bad["server"]["channels"][1]["source"] = "does-not-exist"
+    r = _publish(client, manifest=bad)
+    assert r.status_code == 400
+    assert r.json() == {"error": "source channel not found"}
+
+
+def test_publish_rejects_visibility_mismatch(client):
+    bad = copy.deepcopy(FMF_MANIFEST)
+    bad["server"]["channels"][1]["visibility"] = "public"
+    r = _publish(client, manifest=bad)
+    assert r.status_code == 400
+    assert r.json() == {"error": "read channel visibility must match its source write channel"}

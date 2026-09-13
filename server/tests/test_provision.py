@@ -48,6 +48,22 @@ def test_provision_rejects_source_not_a_write_channel(client):
     assert r.json() == {"error": "source channel not found"}
 
 
+def test_provision_rejects_public_read_of_private_write(client):
+    manifest = copy.deepcopy(FMF_MANIFEST)
+    manifest["server"]["channels"][1]["visibility"] = "public"
+    r = client.post("/widgets/find-my-friends/provision", json={"manifest": manifest})
+    assert r.status_code == 400
+    assert r.json() == {"error": "read channel visibility must match its source write channel"}
+
+
+def test_provision_rejects_private_read_of_public_write(client):
+    manifest = copy.deepcopy(FMF_MANIFEST)
+    manifest["server"]["channels"][0]["visibility"] = "public"
+    r = client.post("/widgets/find-my-friends/provision", json={"manifest": manifest})
+    assert r.status_code == 400
+    assert r.json() == {"error": "read channel visibility must match its source write channel"}
+
+
 def test_reprovision_changed_manifest_returns_stored_routes(client, caplog):
     import logging
 

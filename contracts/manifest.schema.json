@@ -51,6 +51,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["url"],
+      "if": { "required": ["body"] },
+      "then": {
+        "required": ["method"],
+        "properties": { "method": { "const": "POST" } }
+      },
       "properties": {
         "method": { "enum": ["GET", "POST"], "default": "GET" },
         "url": { "type": "string", "format": "uri" },

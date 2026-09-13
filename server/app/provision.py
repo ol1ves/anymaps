@@ -9,7 +9,7 @@ import jsonschema
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from shared.schema import validate_manifest
+from shared.schema import ManifestChannelError, validate_channel_matrix, validate_manifest
 from .db import get_db
 
 logger = logging.getLogger("anymaps.server")
@@ -25,16 +25,6 @@ def _route(base_url, widget_id, channel_id):
     return f"{base_url}/widgets/{widget_id}/channels/{channel_id}"
 
 
-def _validate_source_references(manifest):
-    channels = manifest["server"]["channels"]
-    by_id = {channel["id"]: channel for channel in channels}
-    for channel in channels:
-        if channel["origin"] == "client" and channel["direction"] == "read":
-            target = by_id.get(channel["source"])
-            if target is None or target["origin"] != "client" or target["direction"] != "write":
-                raise HTTPException(status_code=400, detail="source channel not found")
-
-
 @router.post("/widgets/{widget_id}/provision")
 async def provision_widget(widget_id: str, body: ProvisionRequest, request: Request, db=Depends(get_db)):
     """Provision channels for a widget. Idempotent and first-wins: if the widget
@@ -48,11 +38,10 @@ async def provision_widget(widget_id: str, body: ProvisionRequest, request: Requ
     if manifest["id"] != widget_id:
         raise HTTPException(status_code=400, detail="manifest id does not match URL")
 
-    ids = [channel["id"] for channel in manifest["server"]["channels"]]
-    if len(set(ids)) != len(ids):
-        raise HTTPException(status_code=400, detail="duplicate channel id")
-
-    _validate_source_references(manifest)
+    try:
+        validate_channel_matrix(manifest)
+    except ManifestChannelError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     existing = db.execute(
         "SELECT channel_id FROM channels WHERE widget_id = ?", (widget_id,)
