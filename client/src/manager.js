@@ -63,7 +63,8 @@ function deepMerge(target, patch) {
 
 function loadRegistry() {
   try {
-    return JSON.parse(localStorage.getItem("anymaps.registry") ?? "[]");
+    const parsed = JSON.parse(localStorage.getItem("anymaps.registry") ?? "[]");
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -106,6 +107,7 @@ export function createManager() {
 
   // Per-widget runtime state.
   const workers = new Map();      // widgetId -> Worker
+  const pendingEnables = new Set(); // widgetIds with an enable in flight (race guard)
   const names = new Map();        // widgetId -> manifest.name
   const states = new Map();       // widgetId -> in-memory state object
   const commands = new Map();     // name -> fn(payload, widgetId)
@@ -195,74 +197,92 @@ export function createManager() {
 
   async function enable({ manifest, bundleSource, baseUrl }) {
     const widgetId = manifest.id;
-    if (workers.has(widgetId)) return; // already enabled: no-op
+    // No-op if already enabled or an enable is already in flight. The race
+    // guard matters across the `await provision` window: without it a second
+    // enable would spawn a second worker and leak the first.
+    if (workers.has(widgetId) || pendingEnables.has(widgetId)) return;
+    pendingEnables.add(widgetId);
 
-    const channelRoutes = await provision(manifest, baseUrl);
-
-    // Module worker: the brief's fixture bundle uses bare top-level await,
-    // which is valid in module workers (not classic). The runtime is an IIFE
-    // and the bundle has no import/export, so both run as module top-level.
-    const blob = new Blob([anymapsRuntime + "\n;\n" + bundleSource],
-      { type: "application/javascript" });
-    const worker = new Worker(URL.createObjectURL(blob), { type: "module" });
-
-    let state;
     try {
-      state = JSON.parse(localStorage.getItem("anymaps.state." + widgetId) ?? "{}");
-    } catch {
-      state = {};
-    }
-    if (!state || typeof state !== "object") state = {};
+      const channelRoutes = await provision(manifest, baseUrl);
 
-    names.set(widgetId, manifest.name);
-    states.set(widgetId, state);
+      // Module worker: the brief's fixture bundle uses bare top-level await,
+      // which is valid in module workers (not classic). The runtime is an IIFE
+      // and the bundle has no import/export, so both run as module top-level.
+      const blob = new Blob([anymapsRuntime + "\n;\n" + bundleSource],
+        { type: "application/javascript" });
+      const worker = new Worker(URL.createObjectURL(blob), { type: "module" });
 
-    worker.onmessage = ({ data }) => {
-      if (!data || data.v !== 1) return;
-      if (data.kind !== "cmd") return;
-      const { id, name, payload } = data;
-      const handler = commands.get(name);
-      if (!handler) {
-        postError(worker, id, "unknown command " + name);
-        return;
-      }
+      let state;
       try {
-        handler(payload, widgetId);
-      } catch (e) {
-        postError(worker, id, e.message);
-        console.error(e);
+        state = JSON.parse(localStorage.getItem("anymaps.state." + widgetId) ?? "{}");
+      } catch {
+        state = {};
       }
-      // Errors never propagate into the worker; the widget keeps running.
-    };
+      if (!state || typeof state !== "object") state = {};
 
-    workers.set(widgetId, worker);
+      names.set(widgetId, manifest.name);
+      states.set(widgetId, state);
 
-    // Post exactly one init message after provisioning.
-    worker.postMessage({
-      v: 1,
-      kind: "init",
-      protocolVersion: 1,
-      widgetId,
-      baseUrl,
-      channelRoutes,
-      state,
-    });
+      worker.onmessage = ({ data }) => {
+        if (!data || data.v !== 1) return;
+        if (data.kind !== "cmd") return;
+        const { id, name, payload } = data;
+        const handler = commands.get(name);
+        if (!handler) {
+          postError(worker, id, "unknown command " + name);
+          return;
+        }
+        try {
+          handler(payload, widgetId);
+        } catch (e) {
+          postError(worker, id, e.message);
+          console.error(e);
+        }
+        // Errors never propagate into the worker; the widget keeps running.
+      };
 
-    // Upsert registry entry, bump enable-order, reorder, announce.
-    const reg = loadRegistry();
-    const entry = reg.find((e) => e.widgetId === widgetId);
-    if (entry) {
-      entry.version = manifest.version;
-      entry.enabled = true;
-    } else {
-      reg.push({ widgetId, version: manifest.version, enabled: true });
+      // Bootstrap failure (e.g. a bundle that throws at top level): post an
+      // error envelope with no id (per the Task 1 runtime precedent for init
+      // errors) and log. Never throw on the main thread.
+      worker.onerror = (e) => {
+        worker.postMessage({ v: 1, kind: "error", error: e.message });
+        console.error(e);
+      };
+
+      workers.set(widgetId, worker);
+
+      // Post exactly one init message after provisioning.
+      worker.postMessage({
+        v: 1,
+        kind: "init",
+        protocolVersion: 1,
+        widgetId,
+        baseUrl,
+        channelRoutes,
+        state,
+      });
+
+      // Upsert registry entry, bump enable-order, reorder, announce.
+      const reg = loadRegistry();
+      const entry = reg.find((e) => e.widgetId === widgetId);
+      if (entry) {
+        entry.version = manifest.version;
+        entry.enabled = true;
+      } else {
+        reg.push({ widgetId, version: manifest.version, enabled: true });
+      }
+      saveRegistry(reg);
+
+      const order = ++orderCounter;
+      widgetOrders.set(widgetId, order);
+      ctx.reorder(widgetId);
+      bus.emit("widget-enabled", { widgetId });
+    } finally {
+      // Worker is registered; the enabled guard now covers re-entry. Clear
+      // the in-flight marker so a failed enable can be retried.
+      pendingEnables.delete(widgetId);
     }
-    saveRegistry(reg);
-
-    const order = ++orderCounter;
-    widgetOrders.set(widgetId, order);
-    ctx.reorder(widgetId);
-    bus.emit("widget-enabled", { widgetId });
   }
 
   function disable(widgetId) {
