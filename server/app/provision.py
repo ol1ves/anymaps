@@ -22,6 +22,16 @@ def _route(base_url, widget_id, channel_id):
     return f"{base_url}/widgets/{widget_id}/channels/{channel_id}"
 
 
+def _validate_source_references(manifest):
+    channels = manifest["server"]["channels"]
+    by_id = {channel["id"]: channel for channel in channels}
+    for channel in channels:
+        if channel["origin"] == "client" and channel["direction"] == "read":
+            target = by_id.get(channel["source"])
+            if target is None or target["origin"] != "client" or target["direction"] != "write":
+                raise HTTPException(status_code=400, detail="source channel not found")
+
+
 @router.post("/widgets/{widget_id}/provision")
 async def provision_widget(widget_id: str, body: ProvisionRequest, request: Request, db=Depends(get_db)):
     manifest = body.manifest
@@ -35,6 +45,8 @@ async def provision_widget(widget_id: str, body: ProvisionRequest, request: Requ
     ids = [channel["id"] for channel in manifest["server"]["channels"]]
     if len(set(ids)) != len(ids):
         raise HTTPException(status_code=400, detail="duplicate channel id")
+
+    _validate_source_references(manifest)
 
     existing = db.execute(
         "SELECT channel_id FROM channels WHERE widget_id = ?", (widget_id,)

@@ -32,6 +32,22 @@ def test_provision_rejects_duplicate_channel_ids(client):
     assert r.json() == {"error": "duplicate channel id"}
 
 
+def test_provision_rejects_bad_source_reference(client):
+    manifest = copy.deepcopy(FMF_MANIFEST)
+    manifest["server"]["channels"][1]["source"] = "does-not-exist"
+    r = client.post("/widgets/find-my-friends/provision", json={"manifest": manifest})
+    assert r.status_code == 400
+    assert r.json() == {"error": "source channel not found"}
+
+
+def test_provision_rejects_source_not_a_write_channel(client):
+    manifest = copy.deepcopy(FMF_MANIFEST)
+    manifest["server"]["channels"][1]["source"] = "fmfR"  # points at the read channel itself
+    r = client.post("/widgets/find-my-friends/provision", json={"manifest": manifest})
+    assert r.status_code == 400
+    assert r.json() == {"error": "source channel not found"}
+
+
 def test_provision_starts_external_poller(client):
     async def noop(widget_id, channel):
         return None
