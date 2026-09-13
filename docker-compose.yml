@@ -20,4 +20,5 @@ services:
     environment:
       SERVER_URL: http://server:8000
       WIZARD_LLM_API_KEY: ${WIZARD_LLM_API_KEY:-}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
       PATH_PREFIX: ${AGENT_PATH_PREFIX:-}

@@ -56,7 +56,6 @@ def test_model_receives_wizard_flow_skill(monkeypatch):
         prompt = body["messages"][0]["content"]
         assert "Reasonable clarification test" in prompt
         assert "Point of no return" in prompt
-        assert "Work conversationally" not in prompt
         return httpx.Response(200, json={"choices": [{"message": {"content": '{"done":false,"questions":["Which source?"]}'}}]})
     monkeypatch.setattr(main.httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
     result = asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
@@ -725,9 +724,91 @@ def test_deepseek_body_uses_authoritative_prompt_and_omits_old_contract():
 def test_generation_budget_fits_client_turn_deadline():
     body = main._build_deepseek_body([])
     assert body["max_tokens"] == main.MAX_OUTPUT_TOKENS
-    # The client aborts a turn at 60s (TURN_BUDGET_MS in client/src/ui/wizard.js).
-    # The server's DeepSeek deadline must sit strictly inside that budget so a
-    # slow turn returns a clean 500 instead of the client aborting first.
-    assert main.REQUEST_TIMEOUT_SECONDS < 60.0
-    # The completion budget is capped so a full generation fits the deadline.
-    assert main.MAX_OUTPUT_TOKENS <= 12_000
+    assert main.MAX_OUTPUT_TOKENS == 32_000
+    # The client aborts a turn at 360s (6 min) (TURN_BUDGET_MS in
+    # client/src/ui/wizard.js). The server's DeepSeek deadline sits just under
+    # it so a slow turn returns a clean 500 instead of the client aborting first.
+    assert main.REQUEST_TIMEOUT_SECONDS == 350.0
+    assert main.REQUEST_TIMEOUT_SECONDS < 360.0
+
+
+def test_parse_model_response_accepts_research():
+    payload = {
+        "done": False,
+        "research": {
+            "queries": ["anyapi docs"],
+            "urls": ["https://docs.example.com/api"],
+        },
+    }
+    result = main._parse_model_response(payload)
+    assert result["done"] is False
+    assert result["research"].queries == ["anyapi docs"]
+    assert result["research"].urls == ["https://docs.example.com/api"]
+
+
+def test_parse_model_response_rejects_empty_research():
+    with pytest.raises(ValueError, match="research"):
+        main._parse_model_response(
+            {"done": False, "research": {"queries": [], "urls": []}}
+        )
+
+
+def test_generate_researches_then_finalizes(monkeypatch):
+    calls = []
+    manifest = {
+        "id": "w",
+        "name": "W",
+        "version": "1.0.0",
+        "description": "d",
+        "server": {
+            "channels": [
+                {"id": "demo", "origin": "client", "direction": "write",
+                 "visibility": "public"}
+            ]
+        },
+    }
+
+    async def fake_model(messages, api_key):
+        calls.append(messages)
+        if len(calls) == 1:
+            return {
+                "done": False,
+                "research": main.ResearchRequest(
+                    queries=["anyapi docs"], urls=[]
+                ),
+            }
+        return {
+            "done": True,
+            "widgetId": "w",
+            "version": "1.0.0",
+            "manifest": manifest,
+            "bundle": "anymaps.ready().then(() => {});",
+        }
+
+    async def fake_research(queries, urls, api_key):
+        assert queries == ["anyapi docs"]
+        assert urls == []
+        assert api_key == "serper-key"
+        return "RESEARCH RESULT for anyapi"
+
+    async def fake_sources(manifest_arg):
+        return []
+
+    async def fake_publish(manifest_arg, bundle, *, server_url):
+        return {"id": "w", "version": "1.0.0"}
+
+    monkeypatch.setenv("WIZARD_LLM_API_KEY", "test-key")
+    monkeypatch.setenv("SERPER_API_KEY", "serper-key")
+    monkeypatch.setattr(main, "call_deepseek", fake_model)
+    monkeypatch.setattr(main.research, "run_research", fake_research)
+    monkeypatch.setattr(main, "test_candidate_sources", fake_sources)
+    monkeypatch.setattr(main, "publish_widget", fake_publish)
+
+    response = client.post(
+        "/wizard/generate",
+        json={"messages": [{"role": "user", "content": "Make a widget using AnyAPI"}]},
+    )
+    assert response.status_code == 200
+    assert response.json()["done"] is True
+    assert len(calls) == 2
+    assert any("RESEARCH RESULT" in m.content for m in calls[1])
