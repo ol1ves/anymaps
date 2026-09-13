@@ -108,6 +108,13 @@ def test_rejects_missing_identity_fields():
         validate_manifest(m)
 
 
+def test_rejects_records_field_on_client_write():
+    m = copy.deepcopy(FMF)
+    m["server"]["channels"][0]["record"]["records"] = "items"
+    with pytest.raises(jsonschema.ValidationError):
+        validate_manifest(m)
+
+
 def test_rejects_private_external_channel():
     m = copy.deepcopy(FLIGHTS)
     m["server"]["channels"][0]["visibility"] = "private"

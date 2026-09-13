@@ -103,7 +103,11 @@
             "direction": { "const": "write" }
           },
           "required": ["origin", "direction"],
-          "not": { "anyOf": [{ "required": ["source"] }, { "required": ["external"] }] }
+          "not": { "anyOf": [
+            { "required": ["source"] },
+            { "required": ["external"] },
+            { "required": ["record"], "properties": { "record": { "required": ["records"] } } }
+          ] }
         },
         {
           "description": "client read: clients GET records; source references the write channel",
