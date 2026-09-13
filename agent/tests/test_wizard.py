@@ -575,3 +575,62 @@ def test_plan_with_secret_finalizes_and_publishes(monkeypatch):
     assert len(calls) == 2
     final_note = calls[1][-1].content
     assert "abc123" in final_note
+
+
+def test_raw_key_never_reaches_llm_or_manifest(monkeypatch):
+    llm_bodies = []
+
+    async def fake_model(messages, api_key):
+        llm_bodies.append(messages)
+        if len(llm_bodies) == 1:
+            return {"done": False, "plan": _plan_model()}
+        return {
+            "done": True,
+            "widgetId": "ny-weather",
+            "version": "1.0.0",
+            "manifest": {
+                "id": "ny-weather",
+                "name": "NY Weather",
+                "version": "1.0.0",
+                "description": "NY weather",
+                "server": {
+                    "channels": [
+                        {
+                            "id": "noaa",
+                            "origin": "external",
+                            "direction": "read",
+                            "visibility": "public",
+                            "external": {
+                                "method": "GET",
+                                "url": "https://www.ncei.noaa.gov/cdo-web/api/v2/stations",
+                                "auth": {"type": "header", "name": "token", "secret": "abc123"},
+                            },
+                        }
+                    ]
+                },
+            },
+            "bundle": "anymaps.ready().then(() => {});",
+        }
+
+    async def fake_sources(manifest):
+        return []
+
+    async def fake_publish(manifest, bundle, *, server_url):
+        return {"id": "ny-weather", "version": "1.0.0"}
+
+    monkeypatch.setenv("WIZARD_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(main, "call_deepseek", fake_model)
+    monkeypatch.setattr(main, "test_candidate_sources", fake_sources)
+    monkeypatch.setattr(main, "publish_widget", fake_publish)
+
+    response = client.post(
+        "/wizard/generate",
+        json={
+            "messages": [{"role": "user", "content": "NOAA stations in NY"}],
+            "secrets": [{"id": "noaa-token", "secretId": "abc123", "shape": {"ok": True}}],
+        },
+    )
+    assert response.status_code == 200
+    for messages in llm_bodies:
+        for message in messages:
+            assert "secret-value" not in message.content
