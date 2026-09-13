@@ -116,6 +116,18 @@ shape confirmed before you write record mappings. If a source needs a key, set
 are unsure; if the user says an API needs a key, trust them and request it via
 the plan's `auth`. Secrets are never returned in chat.
 
+## Research before guessing
+
+If the user names a third-party API and you are not certain of its exact
+endpoints, parameters, or auth scheme, do not guess. Emit a research request
+instead of a plan or final answer:
+
+{"done": false, "research": {"queries": ["search terms"], "urls": ["doc url"]}}
+
+Include queries, urls, or both — at least one must be present. The service
+fetches the documentation and returns it; then continue to Plan or Build. At
+most 2 research rounds; after that you must emit a plan or final answer.
+
 ## Output
 
 - Return JSON only. No markdown, no commentary.

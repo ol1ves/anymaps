@@ -7,6 +7,7 @@ def test_load_skill_body_strips_frontmatter():
     assert "Point of no return" in body
     assert not body.startswith("---")
     assert "name: wizard-flow" not in body
+    assert "Work conversationally" not in body
 
 
 def test_load_widget_examples_skill():

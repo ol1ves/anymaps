@@ -14,10 +14,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from . import research
 from .prompt import build_system_prompt
-from shared.schema import load_manifest_schema
 from shared.proxy import create_prefix_strip_middleware
-from .prompt import build_system_prompt
 from .generator import (
     MAX_EXTERNAL_SOURCES,
     publish_widget,
@@ -41,18 +40,21 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_CHAT_URL = f"{DEEPSEEK_BASE_URL}/chat/completions"
 DEEPSEEK_MODEL = "deepseek-v4-flash"
 
-# Credit and latency guardrails: one request per turn, bounded input/output.
+# Credit and latency guardrails: bounded requests per turn, bounded input/output.
 MAX_MESSAGES = 24
 MAX_CONTENT_CHARS = 12_000
 MAX_TRANSCRIPT_CHARS = 48_000
 # deepseek-v4-flash is a reasoning model: chain-of-thought tokens share the
 # max_tokens budget with the answer. Cap the completion budget so a full
-# widget-generation turn finishes before the client's 60s abort (see
+# widget-generation turn finishes before the client's 360s (6 min) abort (see
 # TURN_BUDGET_MS in client/src/ui/wizard.js). The server deadline sits just
 # under the client's, so a slow turn returns a clean 500 instead of the client
 # aborting first.
-REQUEST_TIMEOUT_SECONDS = 55.0
-MAX_OUTPUT_TOKENS = 12_000
+REQUEST_TIMEOUT_SECONDS = 350.0
+MAX_OUTPUT_TOKENS = 32_000
+# A turn may run up to this many research rounds (web search + doc fetch)
+# before the model must produce a plan or final answer.
+MAX_RESEARCH_ROUNDS = 2
 
 # Transient DeepSeek failures (connection resets during long generations,
 # rate limits, and 5xx) get one retry before the wizard turn fails.
@@ -87,6 +89,13 @@ widget's identity, data channels, and permissions; the bundle must use only
 the anymaps SDK described below. Until the user has
 approved the proposed widget, return exactly:
 {"done": false, "questions": ["one concise question"]}
+
+When the user names a third-party API and you are not certain of its exact
+endpoints, parameters, or auth scheme, do not guess. Return exactly:
+{"done": false, "research": {"queries": ["search terms"], "urls": ["doc url"]}}
+Include queries, urls, or both — at least one must be present. The service
+will look up the documentation and hand you the results; then continue and
+eventually emit the plan or the final widget.
 
 Only after the user explicitly approves the proposed result may a later wizard
 stage return done=true. For a ready internal candidate, return done=true with
@@ -166,6 +175,24 @@ class PlanResponse(BaseModel):
 
     done: Literal[False]
     plan: PlanPayload
+
+
+class ResearchRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    queries: list[str] = Field(
+        default_factory=list, max_length=research.MAX_SEARCH_QUERIES
+    )
+    urls: list[str] = Field(
+        default_factory=list, max_length=research.MAX_FETCH_URLS
+    )
+
+
+class ResearchResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    done: Literal[False]
+    research: ResearchRequest
 
 
 app = FastAPI(title="anymaps agent service")
@@ -268,6 +295,17 @@ def _parse_model_response(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("model returned invalid wizard JSON")
 
     if payload["done"] is False:
+        if "research" in payload:
+            try:
+                try:
+                    parsed = ResearchResponse.model_validate(payload)
+                except AttributeError:  # Pydantic 1 compatibility
+                    parsed = ResearchResponse.parse_obj(payload)
+            except ValidationError as exc:
+                raise ValueError("model returned an invalid research request") from exc
+            if not parsed.research.queries and not parsed.research.urls:
+                raise ValueError("model returned an empty research request")
+            return {"done": False, "research": parsed.research}
         if "plan" in payload:
             try:
                 parsed = PlanResponse.model_validate(payload)
@@ -511,9 +549,11 @@ def _missing_secret_requests(
 
 
 async def _process_plan(
-    request: WizardRequest, plan: PlanPayload, api_key: str
+    messages: list[Message],
+    bindings: dict[str, SecretBinding],
+    plan: PlanPayload,
+    api_key: str,
 ) -> dict[str, Any]:
-    bindings = {binding.id: binding for binding in request.secrets}
     missing = _missing_secret_requests(plan, bindings)
     if missing:
         return {
@@ -566,7 +606,7 @@ async def _process_plan(
     content = "\n".join(notes)
     if len(content) > MAX_CONTENT_CHARS:
         content = content[:MAX_CONTENT_CHARS - 1]
-    final_messages = list(request.messages) + [Message(role="user", content=content)]
+    final_messages = list(messages) + [Message(role="user", content=content)]
     return await call_deepseek(final_messages, api_key)
 
 
@@ -582,6 +622,7 @@ async def generate_wizard(request: WizardRequest) -> dict[str, Any]:
     api_key = os.getenv("WIZARD_LLM_API_KEY", "").strip()
     if not api_key:
         raise HTTPException(status_code=500, detail=MISSING_KEY_MESSAGE)
+    serper_key = os.getenv("SERPER_API_KEY", "").strip()
     t0 = time.perf_counter()
     # On a follow-up turn the client sends the verified secret bindings. Feed
     # them to the model so it can write the right secretId even when it goes
@@ -589,13 +630,33 @@ async def generate_wizard(request: WizardRequest) -> dict[str, Any]:
     messages = list(request.messages)
     if request.secrets:
         messages.append(Message(role="user", content=_secret_bindings_note(request)))
+    bindings = {binding.id: binding for binding in request.secrets}
     result = await call_deepseek(messages, api_key)
     _log_wizard(
         f"call_deepseek #1 took {time.perf_counter() - t0:.1f}s "
-        f"(done={result.get('done')}, plan={'plan' in result})"
+        f"(done={result.get('done')}, plan={'plan' in result}, "
+        f"research={'research' in result})"
     )
+    # When the model wants to look up a third-party API's documentation, run the
+    # bounded search/fetch and feed the results back so it never guesses an
+    # endpoint, parameter, or auth scheme.
+    for round_index in range(MAX_RESEARCH_ROUNDS):
+        if not (result["done"] is False and "research" in result):
+            break
+        t_research = time.perf_counter()
+        note = await research.run_research(
+            result["research"].queries,
+            result["research"].urls,
+            serper_key,
+        )
+        _log_wizard(
+            f"research round {round_index + 1} took "
+            f"{time.perf_counter() - t_research:.1f}s"
+        )
+        messages.append(Message(role="user", content=note))
+        result = await call_deepseek(messages, api_key)
     if result["done"] is False and "plan" in result:
-        result = await _process_plan(request, result["plan"], api_key)
+        result = await _process_plan(messages, bindings, result["plan"], api_key)
         _log_wizard(
             f"_process_plan took {time.perf_counter() - t0:.1f}s "
             f"(done={result.get('done')})"

@@ -27,7 +27,7 @@ RETRYABLE_SOURCE_TRANSPORT_ERRORS = (
     httpx.ConnectError,
     httpx.RemoteProtocolError,
 )
-MAX_RESPONSE_BYTES = 1_000_000
+MAX_RESPONSE_BYTES = 8_000_000
 MAX_REDIRECTS = 3
 MAX_ARRAY_SUMMARIES = 16
 MAX_SAMPLE_KEYS = 32
@@ -118,15 +118,32 @@ def _request_kwargs(source: SourceSpec, url: str, method: str) -> dict[str, Any]
     return kwargs
 
 
-async def _read_response(response: httpx.Response) -> bytes:
+async def _read_response(response: httpx.Response) -> tuple[bytes, bool, int]:
+    """Read a source body up to MAX_RESPONSE_BYTES, flagging truncation."""
+
     chunks: list[bytes] = []
-    size = 0
+    total = 0
+    truncated = False
     async for chunk in response.aiter_bytes():
-        size += len(chunk)
-        if size > MAX_RESPONSE_BYTES:
-            raise SourceTestError("source response exceeds the size limit")
+        total += len(chunk)
+        if total > MAX_RESPONSE_BYTES:
+            truncated = True
+            break
         chunks.append(chunk)
-    return b"".join(chunks)
+    return b"".join(chunks), truncated, total
+
+
+def _guess_top_level_type(content: bytes) -> str:
+    """Return the JSON type from a (possibly truncated) body prefix."""
+
+    text = content.lstrip()
+    if not text:
+        return "unknown"
+    if text[:1] == b"{":
+        return "object"
+    if text[:1] == b"[":
+        return "array"
+    return "unknown"
 
 
 def _sample_keys(value: Any) -> list[str]:
@@ -239,7 +256,7 @@ async def _test_source_once(
                         raise SourceTestError(
                             f"source returned HTTP {response.status_code}"
                         )
-                    content = await _read_response(response)
+                    content, truncated, total_size = await _read_response(response)
                     content_type = response.headers.get("content-type", "")
                     break
     except SourceTestError:
@@ -250,6 +267,20 @@ async def _test_source_once(
         raise _SourceRetryableError(type(exc).__name__) from exc
     except httpx.HTTPError as exc:
         raise SourceTestError("source request failed") from exc
+
+    if truncated:
+        # A source larger than the read cap is valid; the wizard only needs its
+        # shape, so report truncation instead of failing the whole turn.
+        return {
+            "ok": True,
+            "truncated": True,
+            "status": 200,
+            "content_type": content_type,
+            "content_length": total_size,
+            "top_level_type": _guess_top_level_type(content),
+            "arrays": [],
+            "note": "source response exceeds the size limit",
+        }
 
     try:
         payload = httpx.Response(200, content=content).json()

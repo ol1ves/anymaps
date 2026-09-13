@@ -115,7 +115,7 @@ export async function verifySecrets(secretRequests, values, agentBaseUrl, fetchI
 
 // --- Panel -------------------------------------------------------------
 
-const TURN_BUDGET_MS = 60_000;
+const TURN_BUDGET_MS = 360_000;
 
 export function register(ctx) {
   if (typeof document === "undefined") return; // non-DOM (tests) -> no-op
@@ -227,7 +227,7 @@ export function register(ctx) {
       clearTimeout(timer);
       thinking.remove();
       const msg = (err && err.name === "AbortError")
-        ? "wizard timed out after 60s"
+        ? "wizard timed out after 6 minutes"
         : "wizard request failed";
       bubble("assistant", msg, { error: true });
       setBusy(false);

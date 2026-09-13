@@ -252,19 +252,29 @@ def test_rejects_invalid_json(monkeypatch):
         )
 
 
-def test_rejects_oversized_response(monkeypatch):
+def test_oversized_response_is_truncated_not_rejected(monkeypatch):
     allow_all_urls(monkeypatch)
     monkeypatch.setattr(source_test, "MAX_RESPONSE_BYTES", 8)
     transport = httpx.MockTransport(
         lambda request: httpx.Response(200, content=b'{"too":"large"}')
     )
-    with pytest.raises(source_test.SourceTestError, match="size limit"):
-        run(
-            source_test.test_source(
-                source_test.SourceSpec(url="https://example.com"),
-                transport=transport,
-            )
+    result = run(
+        source_test.test_source(
+            source_test.SourceSpec(url="https://example.com"),
+            transport=transport,
         )
+    )
+    assert result["ok"] is True
+    assert result["truncated"] is True
+    assert "size limit" in result["note"]
+    assert result["top_level_type"] == "unknown"
+
+
+def test_guess_top_level_type():
+    assert source_test._guess_top_level_type(b'  {"a": 1}') == "object"
+    assert source_test._guess_top_level_type(b"[1, 2, 3]") == "array"
+    assert source_test._guess_top_level_type(b"   ") == "unknown"
+    assert source_test._guess_top_level_type(b"") == "unknown"
 
 
 @pytest.mark.parametrize("kind", ["header", "query"])
