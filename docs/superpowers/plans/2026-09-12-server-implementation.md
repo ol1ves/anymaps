@@ -1337,12 +1337,17 @@ def _read(db, widget_id, channel_id, token, query_params):
         raise HTTPException(status_code=404, detail="channel not found")
     storage_token = _check_access(db, channel, widget_id, token)
     mapping = _effective_mapping(db, widget_id, channel)
+    storage_channel_id = (
+        channel["source"]
+        if channel["origin"] == "client" and channel["direction"] == "read"
+        else channel_id
+    )
     try:
         filters = filter_mod.parse_filters(query_params)
         filter_mod.validate_filters(mapping, filters)
     except filter_mod.FilterError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    result = filter_mod.query_records(db, widget_id, channel_id, storage_token, mapping, filters)
+    result = filter_mod.query_records(db, widget_id, storage_channel_id, storage_token, mapping, filters)
     return {"records": result}
 ```
 
