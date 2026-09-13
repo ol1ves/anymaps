@@ -18,18 +18,18 @@ ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
-    db = db_module.connect(db_path or os.environ.get("DATABASE_PATH", "data/anymaps.db"))
-    poller = Poller(db)
+    resolved_path = db_path or os.environ.get("DATABASE_PATH", "data/anymaps.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        poller = Poller(db_module.connect(resolved_path))
+        app.state.poller = poller
         poller.start_all()
         yield
         await poller.shutdown()
 
     app = FastAPI(title="anymaps generic widget server", lifespan=lifespan)
-    app.state.db = db
-    app.state.poller = poller
+    app.state.db_path = resolved_path
 
     app.add_middleware(
         CORSMiddleware,

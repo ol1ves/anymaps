@@ -3,6 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from server.app.db import connect
 from server.app.main import create_app
 
 FMF_MANIFEST = {
@@ -98,7 +99,11 @@ def client(tmp_path):
 
 @pytest.fixture
 def db(client):
-    return client.app.state.db
+    conn = connect(client.app.state.db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def insert_channel(db, widget_id, channel):

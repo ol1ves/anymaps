@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+from collections.abc import Iterator
 
 from fastapi import Request
 
@@ -70,5 +71,10 @@ def connect(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def get_db(request: Request) -> sqlite3.Connection:
-    return request.app.state.db
+def get_db(request: Request) -> Iterator[sqlite3.Connection]:
+    """Yield a fresh connection for one request, then close it."""
+    db = connect(request.app.state.db_path)
+    try:
+        yield db
+    finally:
+        db.close()
