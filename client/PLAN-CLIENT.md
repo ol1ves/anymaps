@@ -208,6 +208,11 @@ ctx = {
   // re-enable so later-enabled widgets draw on top).
   reorder(widgetId),
 
+  // Current z-order index of a widget (markers.js uses it for element
+  // zIndex = 1000 + 10 * order). Added by Task 2 as a ratified seam
+  // addition; tasks 3+ may consume it.
+  widgetOrder(widgetId),
+
   // Tiny internal event bus: bus.on(name, cb), bus.emit(name, data).
   bus,
 
@@ -641,11 +646,20 @@ Full implementation per the seams section. Pinned details:
   `kind === "cmd"`: look up registered handler; missing name → error envelope
   `{ v:1, kind:"error", id, error: "unknown command <name>" }`; handler
   throw → error envelope `{ v:1, kind:"error", id, error: message }` and
-  `console.error`. Never propagate into the worker.
-- `enable({ manifest, bundleSource, baseUrl })`: no-op if already enabled.
-  Await `provision(manifest, baseUrl)` (install.js stub). Build blob:
+  `console.error`. Never propagate into the worker. Also wire
+  `worker.onerror` (bundle top-level throw) → error envelope without an
+  `id` (bootstrap failure; no command to echo) plus `console.error`, so a
+  throwing bundle still produces a clear error per the envelope contract.
+- `enable({ manifest, bundleSource, baseUrl })`: no-op if already enabled
+  AND no-op if an enable for that widget is already in flight (pending set
+  cleared in `finally`, so a second call inside the provision await window
+  cannot spawn a second worker). Await `provision(manifest, baseUrl)`
+  (install.js stub). Build blob:
   `new Blob([anymapsRuntime + "\n;\n" + bundleSource], { type: "application/javascript" })`
-  → `new Worker(URL.createObjectURL(blob))`. Load state:
+  → `new Worker(URL.createObjectURL(blob), { type: "module" })` — module
+  workers are a compatible superset: classic bundles without imports run
+  unchanged, and the fixture's bare top-level await is valid (ratified
+  deviation from the bare-`new Worker` pin). Load state:
   `JSON.parse(localStorage.getItem("anymaps.state." + manifest.id) ?? "{}")`
   (parse failure → `{}`). Post exactly one init message with the pinned
   fields. Upsert registry entry `{ widgetId, version, enabled: true }` and
@@ -660,7 +674,7 @@ Full implementation per the seams section. Pinned details:
 - `cleanup` runs cleanup fns in registration order, then tracked removeFns.
   Cleanup fns must be idempotent (re-enable must not double-register).
 - Registry helpers: `loadRegistry()`/`saveRegistry()` with the pinned key and
-  shape; corrupted JSON → `[]`.
+  shape; corrupted JSON or a non-array value → `[]`.
 - Z-order: enable-order counter starting at 1; marker element
   `style.zIndex = 1000 + 10 * order`. `ctx.reorder(widgetId)` re-applies the
   current order to that widget's markers (Task 3 extends the idea to
