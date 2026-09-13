@@ -557,6 +557,105 @@ body {
   outline-offset: 2px;
 }
 
+/* ---- Status bar (floating widget counter) ---- */
+
+#statusbar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+  overflow: hidden;
+  background: var(--anymaps-surface);
+  border: 1px solid var(--anymaps-border);
+  border-radius: var(--anymaps-radius);
+  padding: 5px 10px;
+  font: 12px/1.5 var(--anymaps-font);
+  color: var(--anymaps-fg);
+  box-shadow: var(--anymaps-shadow-float);
+  white-space: nowrap;
+}
+
+.anymaps-status-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--anymaps-success);
+}
+
+.anymaps-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--anymaps-success);
+  animation: anymaps-status-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes anymaps-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.anymaps-status-count {
+  min-width: 18px;
+  padding: 0 8px;
+  text-align: center;
+  font-weight: 700;
+  background: var(--anymaps-accent-soft);
+  color: var(--anymaps-accent-text);
+  border-radius: var(--anymaps-radius-sm);
+}
+
+.anymaps-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background: var(--anymaps-bg);
+  border: 1px solid var(--anymaps-border);
+  border-radius: var(--anymaps-radius-sm);
+  animation: anymaps-status-in 180ms ease;
+}
+
+.anymaps-status-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.anymaps-status-chip-name {
+  font-weight: 500;
+  color: var(--anymaps-fg);
+}
+
+.anymaps-status-hint {
+  color: var(--anymaps-fg-faint);
+}
+
+@keyframes anymaps-status-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ---- MapLibre stacking ---- */
 
 /* Markers carry large z-index values for per-widget draw order
