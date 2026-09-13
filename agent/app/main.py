@@ -121,7 +121,7 @@ class WizardRequest(BaseModel):
 
 
 class ClarifyingResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     done: Literal[False]
     questions: list[str] = Field(min_length=1, max_length=1)
@@ -229,31 +229,82 @@ def _parse_model_response(payload: dict[str, Any]) -> dict[str, Any]:
         return candidate.dict()
 
 
+def _extract_first_json_object(text: str) -> dict[str, Any] | None:
+    """Return the first balanced JSON object found in prose, or None."""
+
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        char = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+        else:
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(text[start:i + 1])
+                    except json.JSONDecodeError:
+                        return None
+                    return parsed if isinstance(parsed, dict) else None
+    return None
+
+
 def _extract_json_content(response_json: dict[str, Any]) -> dict[str, Any]:
     """Extract the object from a non-streaming Chat Completions response."""
 
     try:
         choice = response_json["choices"][0]
-        content = choice["message"]["content"]
+        message = choice["message"]
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError("DeepSeek returned no assistant content") from exc
-    if not isinstance(content, str):
-        raise ValueError("DeepSeek returned non-text assistant content")
 
-    text = content.strip()
-    if text.startswith("```") and text.endswith("```"):
-        text = text[3:-3].strip()
-        if text.lower().startswith("json"):
-            text = text[4:].lstrip()
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError as exc:
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        # Reasoning models may leave the final answer in reasoning_content.
+        content = message.get("reasoning_content")
+    if not isinstance(content, str) or not content.strip():
         if choice.get("finish_reason") == "length":
             raise ValueError(
                 "DeepSeek response was truncated (finish_reason=length) "
                 "before it produced complete JSON"
-            ) from exc
-        raise ValueError("DeepSeek returned invalid JSON") from exc
+            )
+        raise ValueError("DeepSeek returned no assistant content")
+
+    text = content.strip()
+    if "```" in text:
+        start = text.find("```")
+        end = text.rfind("```")
+        if start != -1 and end > start:
+            inner = text[start + 3:end].strip()
+            if inner.lower().startswith("json"):
+                inner = inner[4:].lstrip()
+            text = inner
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = _extract_first_json_object(text)
+        if parsed is None:
+            if choice.get("finish_reason") == "length":
+                raise ValueError(
+                    "DeepSeek response was truncated (finish_reason=length) "
+                    "before it produced complete JSON"
+                )
+            raise ValueError("DeepSeek returned invalid JSON")
     if not isinstance(parsed, dict):
         raise ValueError("DeepSeek returned a JSON value instead of an object")
     return parsed

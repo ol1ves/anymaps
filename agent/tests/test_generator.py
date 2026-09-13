@@ -168,3 +168,18 @@ def test_source_limit_is_enforced_before_fetching():
     ]}}
     with pytest.raises(ValueError, match="too many"):
         run(generator.test_candidate_sources(manifest))
+
+
+def test_candidate_ignores_unknown_fields():
+    candidate = generator.validate_candidate(
+        {
+            "done": True,
+            "widgetId": "demo-widget",
+            "version": "0.1.0",
+            "manifest": MANIFEST,
+            "bundle": "anymaps.ready().then(() => {});",
+            "summary": "a demo widget",
+        }
+    )
+    assert candidate.done is True
+    assert candidate.bundle == "anymaps.ready().then(() => {});"
