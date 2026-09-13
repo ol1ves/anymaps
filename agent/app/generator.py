@@ -25,7 +25,7 @@ PUBLISH_TIMEOUT_SECONDS = 10.0
 class GenerationCandidate(BaseModel):
     """Internal model response. ``bundle`` never crosses the wizard API."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     done: bool
     questions: list[str] | None = None

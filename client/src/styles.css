@@ -180,6 +180,35 @@ body {
   color: var(--anymaps-fg);
 }
 
+.anymaps-wizard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.anymaps-wizard-header .anymaps-wizard-heading {
+  margin: 0;
+}
+
+.anymaps-wizard-clear {
+  font: 12px/1.4 var(--anymaps-font);
+  border: 1px solid var(--anymaps-border-strong);
+  background: var(--anymaps-surface);
+  color: var(--anymaps-fg);
+  border-radius: var(--anymaps-radius-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease,
+    color 150ms ease;
+}
+
+.anymaps-wizard-clear:hover {
+  background: var(--anymaps-accent-soft);
+  border-color: var(--anymaps-accent);
+  color: var(--anymaps-accent);
+}
+
 /* ---- Buttons ---- */
 
 .anymaps-gallery-btn,
@@ -384,6 +413,59 @@ body {
 .anymaps-wizard-busy {
   color: var(--anymaps-fg-faint);
   font-style: italic;
+}
+
+.anymaps-wizard-secrets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.anymaps-wizard-secret-input {
+  font: 13px/1.4 var(--anymaps-font);
+  color: var(--anymaps-fg);
+  background: var(--anymaps-surface);
+  border: 1px solid var(--anymaps-border-strong);
+  border-radius: var(--anymaps-radius-sm);
+  padding: 6px 10px;
+}
+
+.anymaps-wizard-secret-input::placeholder {
+  color: var(--anymaps-fg-faint);
+}
+
+.anymaps-wizard-secret-input:focus {
+  outline: 2px solid var(--anymaps-ring);
+  outline-offset: -1px;
+  border-color: var(--anymaps-accent);
+}
+
+.anymaps-wizard-secret-submit {
+  font: 13px/1.4 var(--anymaps-font);
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--anymaps-accent);
+  border: 1px solid var(--anymaps-accent);
+  border-radius: var(--anymaps-radius-sm);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.anymaps-wizard-secret-submit:hover {
+  background: var(--anymaps-accent-hover);
+  border-color: var(--anymaps-accent-hover);
+}
+
+.anymaps-wizard-secret-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.anymaps-wizard-secret-submit:focus-visible {
+  outline: 2px solid var(--anymaps-ring);
+  outline-offset: 2px;
 }
 
 /* ---- Widget panels ---- */
