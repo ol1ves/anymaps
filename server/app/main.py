@@ -14,7 +14,13 @@ from .poller import Poller
 
 logger = logging.getLogger("anymaps.server")
 
-ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+def _parse_origins(raw: str) -> list[str]:
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def allowed_origins() -> list[str]:
+    raw = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+    return _parse_origins(raw)
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
@@ -33,7 +39,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=ALLOWED_ORIGINS,
+        allow_origins=allowed_origins(),
         allow_methods=["*"],
         allow_headers=["*"],
     )
