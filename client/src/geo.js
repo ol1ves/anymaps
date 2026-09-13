@@ -89,6 +89,7 @@ export function createGeoProxy({ watchPosition, clearWatch, onEvent }) {
 // Main-thread wiring
 
 import maplibregl from "maplibre-gl";
+import { startGeolocation as validateStart } from "./validate.js";
 
 // Dot lifecycle: show(payload) positions the marker with setLngLat BEFORE
 // addTo, then assigns it. MapLibre throws on addTo without a position, so
@@ -156,6 +157,8 @@ export function register(ctx, deps = {}) {
   });
 
   ctx.registerCommand("startGeolocation", (payload, widgetId) => {
+    const verr = validateStart(payload);
+    if (verr) throw new Error(verr);
     if (!geo) {
       ctx.emit(widgetId, "geolocationError", { code: 2, message: "geolocation unavailable" });
       return;

@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>anymaps contract checklist</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: system-ui, sans-serif;
+      }
+      #app {
+        display: flex;
+        height: 100%;
+      }
+      #map-wrap {
+        flex: 1;
+        position: relative;
+        min-width: 0;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+      #sidebar {
+        width: 360px;
+        border-left: 1px solid #e5e7eb;
+        padding: 16px;
+        overflow-y: auto;
+        box-sizing: border-box;
+        background: #fafafa;
+        color: #1f2937;
+      }
+      #sidebar h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      #panel-host,
+      #gallery,
+      #wizard,
+      #checklist {
+        border-top: 1px solid #e5e7eb;
+        margin-top: 8px;
+        padding-top: 8px;
+      }
+      #checklist button {
+        border: 1px solid #d1d5db;
+        background: #fff;
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      #checklist button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      #checklist-status {
+        font-size: 12px;
+        color: #6b7280;
+        margin: 6px 0;
+      }
+      #checklist-results {
+        list-style: none;
+        margin: 8px 0 0;
+        padding: 0;
+        font: 12px/1.5 system-ui, sans-serif;
+      }
+      #checklist-results li {
+        padding: 1px 0;
+      }
+      .anymaps-wizard-log {
+        max-height: 160px;
+        overflow-y: auto;
+      }
+      .anymaps-panel-body {
+        font-size: 13px;
+      }
+      .anymaps-marker {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        cursor: pointer;
+      }
+      .anymaps-marker-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #0066ff;
+        border: 2px solid #fff;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        line-height: 1;
+        color: #fff;
+        box-sizing: border-box;
+        overflow: hidden;
+      }
+      .anymaps-marker-label {
+        margin-top: 2px;
+        background: rgba(255, 255, 255, 0.92);
+        border-radius: 8px;
+        padding: 1px 6px;
+        font: 11px/1.4 system-ui, sans-serif;
+        color: #1f2937;
+        white-space: nowrap;
+      }
+      #camera-badge {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 1000;
+        display: none;
+        align-items: center;
+        gap: 6px;
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 8px;
+        padding: 4px 8px;
+        font: 12px/1.5 system-ui, sans-serif;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      }
+      #camera-badge[aria-hidden="false"] {
+        display: inline-flex;
+      }
+      #camera-badge button {
+        border: 1px solid #d1d5db;
+        background: #fff;
+        border-radius: 6px;
+        padding: 1px 6px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="map-wrap">
+        <div id="map"></div>
+        <div id="camera-badge" aria-hidden="true">
+          <span id="camera-badge-label">Camera</span>
+          <button id="camera-badge-release">Release</button>
+        </div>
+      </div>
+      <div id="sidebar">
+        <h1>anymaps checklist</h1>
+        <div id="checklist">
+          <button id="run-checks">Run checks</button>
+          <div id="checklist-status">Idle.</div>
+          <ul id="checklist-results"></ul>
+        </div>
+        <div id="panel-host"></div>
+        <div id="gallery"></div>
+        <div id="wizard"></div>
+      </div>
+    </div>
+    <script type="module" src="/checklist/page.js"></script>
+  </body>
+</html>

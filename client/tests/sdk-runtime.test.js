@@ -144,9 +144,17 @@ test("persist payload is the partial object itself", () => {
 
 test("handler exceptions never crash the widget", () => {
   const { anymaps, receive } = loadRuntime();
-  anymaps.on("markerClick", () => { throw new Error("boom"); });
-  const second = [];
-  anymaps.on("markerClick", (p) => second.push(p));
-  receive({ v: 1, kind: "event", name: "markerClick", payload: { markerId: "m1" } });
-  assert.deepEqual(second, [{ markerId: "m1" }]);
+  // The runtime logs handler errors via console.error. The error is
+  // intentional here; silence it so npm test output stays pristine.
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    anymaps.on("markerClick", () => { throw new Error("boom"); });
+    const second = [];
+    anymaps.on("markerClick", (p) => second.push(p));
+    receive({ v: 1, kind: "event", name: "markerClick", payload: { markerId: "m1" } });
+    assert.deepEqual(second, [{ markerId: "m1" }]);
+  } finally {
+    console.error = originalError;
+  }
 });

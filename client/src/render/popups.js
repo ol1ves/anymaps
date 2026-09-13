@@ -52,7 +52,7 @@ export function register(ctx) {
       popup.setLngLat([payload.lng, payload.lat]).addTo(ctx.map);
     }
 
-    current = { popup, widgetId, id: payload.id, anchored };
+    current = { popup, widgetId, id: payload.id };
 
     // Track so manager cleanup removes this widget's open popup. Idempotent:
     // popup.remove() is safe to call twice; clearing `current` only when it
@@ -69,8 +69,11 @@ export function register(ctx) {
     const err = validateClose(payload);
     if (err) throw new Error(err);
 
-    // Fire-and-forget: only act if the current popup matches this id.
-    if (!current || current.id !== payload.id) return;
+    // Fire-and-forget: only act if the current popup is this widget's
+    // (id + widgetId match) so widget B cannot close widget A's popup on
+    // an id collision.
+    if (!current || current.id !== payload.id ||
+        current.widgetId !== widgetId) return;
     closeCurrent();
   });
 
@@ -78,7 +81,10 @@ export function register(ctx) {
     const err = validateSetContent(payload);
     if (err) throw new Error(err);
 
-    if (!current || current.id !== payload.id) {
+    // Require the issuing widget to own the open popup so widget B cannot
+    // rewrite widget A's popup on an id collision.
+    if (!current || current.id !== payload.id ||
+        current.widgetId !== widgetId) {
       throw new Error("popup not open");
     }
     current.popup.setHTML(payload.content);

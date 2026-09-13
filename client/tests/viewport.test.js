@@ -114,6 +114,32 @@ test("two moveEnd calls inside the window debounce to one broadcast", () => {
   assert.equal(sent.length, 3);
 });
 
+// Case 6 (gap): a camera command whose moveEnd lands AFTER the debounce
+// window. The fallback timer fires mid-flight and broadcasts to the others
+// with suppress still sticky, so the subsequent moveEnd still excludes the
+// issuer and rebroadcasts the final viewport to the others. This is the
+// flyTo/animated-fitBounds gap from the task-9 final review.
+test("timer fallback then late moveEnd still excludes the issuer", () => {
+  const { clock, sent, notifier } = setup();
+  notifier.scheduleCameraCommand("a");
+  // Advance past the debounce so the fallback timer fires mid-flight.
+  clock.advance(DEBOUNCE_MS);
+  // Fallback broadcast: issuer excluded, suppress stays sticky.
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent.map((s) => s.widgetId).sort(), ["b", "c"]);
+  // The animation's moveEnd now lands after the debounce.
+  notifier.moveEnd();
+  // Issuer still excluded; the others receive the final viewport again.
+  assert.equal(sent.length, 4);
+  const targets = sent.map((s) => s.widgetId).sort();
+  assert.deepEqual(targets, ["b", "b", "c", "c"]);
+  assert.ok(!targets.includes("a"), "issuer must stay excluded");
+  for (const s of sent) {
+    assert.equal(s.name, "viewportChanged");
+    assert.equal(s.payload, VIEWPORT);
+  }
+});
+
 // Case 5: after a suppressed broadcast, a later bare moveEnd emits to all.
 test("bare moveEnd after a suppressed broadcast emits to all again", () => {
   const { clock, sent, notifier } = setup();
