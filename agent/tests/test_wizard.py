@@ -312,3 +312,39 @@ def test_live_deepseek_smoke():
     body = response.json()
     assert body["done"] is False
     assert len(body["questions"]) == 1
+
+
+def test_extract_json_strips_prose_and_fence():
+    content = (
+        "Sure, here is the JSON:\n"
+        "```json\n{\"done\": false, \"questions\": [\"Which source?\"]}\n```"
+    )
+    result = main._extract_json_content(
+        {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
+    )
+    assert result == {"done": False, "questions": ["Which source?"]}
+
+
+def test_extract_json_reads_reasoning_content_fallback():
+    result = main._extract_json_content(
+        {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "content": "",
+                        "reasoning_content": '{"done":false,"questions":["q"]}',
+                    },
+                }
+            ]
+        }
+    )
+    assert result == {"done": False, "questions": ["q"]}
+
+
+def test_parse_model_response_ignores_extra_keys():
+    payload = {"done": False, "questions": ["Which source?"], "note": "extra"}
+    assert main._parse_model_response(payload) == {
+        "done": False,
+        "questions": ["Which source?"],
+    }
