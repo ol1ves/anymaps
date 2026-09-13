@@ -107,6 +107,15 @@ done:false with a single question:
 "Approve publishing this as widget '<id>' v<version> — <source; scope; mapping;
 rendering in one or two sentences>?"
 
+## Plans and keys
+
+For any widget with external channels, after the source is decided, emit a
+plan (`done:false` with `plan.sources`) so the source can be tested and its
+shape confirmed before you write record mappings. If a source needs a key, set
+`auth` to its type/name/scheme only. Never claim an API needs no key when you
+are unsure; if the user says an API needs a key, trust them and request it via
+the plan's `auth`. Secrets are never returned in chat.
+
 ## Output
 
 - Return JSON only. No markdown, no commentary.
