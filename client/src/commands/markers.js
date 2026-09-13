@@ -11,11 +11,44 @@ import { addMarker as validateAdd, updateMarker as validateUpdate,
 
 // widgetId -> Map<markerId, { marker, element, iconEl, data }>
 const stores = new Map();
+const MARKER_MOVE_MS = 500;
 
 function storeFor(widgetId) {
   let m = stores.get(widgetId);
   if (!m) { m = new Map(); stores.set(widgetId, m); }
   return m;
+}
+
+function cancelMove(rec) {
+  if (rec.animationFrame != null) {
+    cancelAnimationFrame(rec.animationFrame);
+    rec.animationFrame = null;
+  }
+}
+
+function animateMove(rec, lat, lng) {
+  cancelMove(rec);
+  const start = rec.data;
+  const fromLat = Number(start.lat);
+  const fromLng = Number(start.lng);
+  const startTime = performance.now();
+
+  if (!Number.isFinite(fromLat) || !Number.isFinite(fromLng)) {
+    rec.marker.setLngLat([lng, lat]);
+    return;
+  }
+
+  const step = (now) => {
+    const progress = Math.min(1, (now - startTime) / MARKER_MOVE_MS);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    rec.marker.setLngLat([
+      fromLng + (lng - fromLng) * eased,
+      fromLat + (lat - fromLat) * eased,
+    ]);
+    if (progress < 1) rec.animationFrame = requestAnimationFrame(step);
+    else rec.animationFrame = null;
+  };
+  rec.animationFrame = requestAnimationFrame(step);
 }
 
 // Additive lookup exported for popups.js anchored-popup support (Task 3).
@@ -91,7 +124,10 @@ export function register(ctx) {
     const store = storeFor(widgetId);
     // Replace an existing marker with the same id rather than double-draw.
     const prev = store.get(payload.id);
-    if (prev) prev.marker.remove();
+    if (prev) {
+      cancelMove(prev);
+      prev.marker.remove();
+    }
 
     const { element, iconEl } = buildElement(payload);
     const marker = new maplibregl.Marker({ element })
@@ -103,10 +139,11 @@ export function register(ctx) {
     });
 
     const data = { ...payload };
-    const rec = { marker, element, iconEl, data };
+    const rec = { marker, element, iconEl, data, animationFrame: null };
     store.set(payload.id, rec);
 
     ctx.track(widgetId, "marker", payload.id, () => {
+      cancelMove(rec);
       marker.remove();
       store.delete(payload.id);
     });
@@ -127,7 +164,7 @@ export function register(ctx) {
     if ("lat" in payload || "lng" in payload) {
       const lat = "lat" in payload ? payload.lat : data.lat;
       const lng = "lng" in payload ? payload.lng : data.lng;
-      marker.setLngLat([lng, lat]);
+      animateMove(rec, lat, lng);
       if ("lat" in payload) data.lat = payload.lat;
       if ("lng" in payload) data.lng = payload.lng;
     }
@@ -164,6 +201,7 @@ export function register(ctx) {
     const rec = store.get(payload.id);
     // Unknown id: ignore silently (idempotent, fire-and-forget).
     if (!rec) return;
+    cancelMove(rec);
     rec.marker.remove();
     store.delete(payload.id);
     // The tracked removeFn is idempotent; cleanup will no-op on this id.

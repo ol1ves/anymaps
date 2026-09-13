@@ -27,6 +27,32 @@ export function register(ctx) {
       summary.textContent = ctx.widgetName(widgetId);
       const body = document.createElement("div");
       body.className = "anymaps-panel-body";
+      body.addEventListener("click", (event) => {
+        const control = event.target.closest("[data-anymaps-action]");
+        if (!control || !body.contains(control)) return;
+        if (control.closest("form")) return;
+        event.preventDefault();
+        const input = body.querySelector("[name=roomToken]");
+        const name = body.querySelector("[name=displayName]");
+        ctx.emit(widgetId, "panelAction", {
+          action: control.getAttribute("data-anymaps-action"),
+          value: control.value ?? "",
+          roomToken: input ? input.value : "",
+          displayName: name ? name.value : "",
+        });
+      });
+      body.addEventListener("submit", (event) => {
+        const form = event.target.closest("form[data-anymaps-action]");
+        if (!form || !body.contains(form)) return;
+        event.preventDefault();
+        const input = form.querySelector("[name=roomToken]");
+        const name = form.querySelector("[name=displayName]");
+        ctx.emit(widgetId, "panelAction", {
+          action: form.getAttribute("data-anymaps-action"),
+          roomToken: input ? input.value : "",
+          displayName: name ? name.value : "",
+        });
+      });
       el.append(summary, body);
       sections.set(widgetId, el);
       // Register cleanup once per widget (idempotent under re-enable).

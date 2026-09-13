@@ -75,6 +75,22 @@ test("start emits dot visible with first fix; stop of one subscriber keeps the w
   assert.deepEqual(proxy.subscribers(), ["b"]);
 });
 
+test("showUserDot false keeps the watch active without drawing the native dot", () => {
+  const h = makeHarness();
+  const proxy = createGeoProxy(h);
+  proxy.start("friends", { showUserDot: false });
+
+  const payload = { lat: 40.71, lng: -74.0, accuracy: 25 };
+  h.watches[0].success({ coords: { latitude: payload.lat, longitude: payload.lng, accuracy: payload.accuracy } });
+
+  assert.deepEqual(h.events, [
+    { type: "dot", visible: false, payload },
+    fixEvt(payload),
+  ]);
+  assert.deepEqual(proxy.subscribers(), ["friends"]);
+  assert.equal(h.calls.clear, 0);
+});
+
 test("stopping the last subscriber clears the watch once and emits dot off", () => {
   const h = makeHarness();
   const proxy = createGeoProxy(h);
