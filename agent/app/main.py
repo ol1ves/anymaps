@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from shared.schema import load_manifest_schema
+from shared.proxy import create_prefix_strip_middleware
 from .generator import (
     publish_widget,
     store_secret,
@@ -137,15 +138,22 @@ class WizardSecretRequest(BaseModel):
     auth: SecretAuthSpec
 
 
+def _allowed_origins() -> list[str]:
+    raw = os.getenv("ALLOWED_ORIGINS", "*")
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        return ["*"]
+    return origins
+
+
 app = FastAPI(title="anymaps agent service")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in os.getenv(
-        "ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-    ).split(",") if origin.strip()],
+    allow_origins=_allowed_origins(),
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
+app.middleware("http")(create_prefix_strip_middleware())
 
 
 @app.exception_handler(RequestValidationError)

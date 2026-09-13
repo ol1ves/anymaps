@@ -11,6 +11,30 @@ npm run dev   # http://localhost:5173
 
 `localhost` is a secure context, so browser geolocation works.
 
+## Environment
+
+Set the base server URL and the Agent Service URL with the
+`VITE_SERVER_URL` and `VITE_AGENT_URL` environment variables.
+Copy `.env.example` to `.env` (or `.env.local`) and adjust it:
+
+```sh
+cp .env.example .env
+```
+
+```dotenv
+VITE_SERVER_URL=http://localhost:8000
+VITE_AGENT_URL=http://localhost:8001
+```
+
+Vite reads `.env` files at dev and build time. Defaults are
+`http://localhost:8000` and `http://localhost:8001` when the variables are
+unset.
+
+Runtime overrides win over the environment variables, in order:
+
+1. `window.__ANYMAPS_CONFIG__.baseUrl` / `.agentUrl`
+2. `localStorage["anymaps.baseUrl"]` / `["anymaps.agentUrl"]`
+
 ## Structure
 
 - `src/sdk/anymaps.js` — the SDK runtime, prepended to widget bundles.
@@ -20,8 +44,10 @@ npm run dev   # http://localhost:5173
 - `src/main.js` — bootstrap. The direct MapLibre calls here are hello-world
   placeholders and get replaced by the WidgetManager.
 
-The client talks to the generic server at `http://localhost:8000` and the
-Agent Service at `http://localhost:8001`. CORS must allow `http://localhost:5173`.
+The client talks to the generic server at the `VITE_SERVER_URL` base URL
+(default `http://localhost:8000`) and the Agent Service at the
+`VITE_AGENT_URL` base URL (default `http://localhost:8001`). Both services
+allow all origins by default (`ALLOWED_ORIGINS=*`).
 
 ## Tests
 

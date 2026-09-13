@@ -9,6 +9,7 @@ services:
       - ./data:/data
     environment:
       DATABASE_PATH: /data/anymaps.db
+      PATH_PREFIX: ${SERVER_PATH_PREFIX:-}
 
   agent:
     build:
@@ -19,3 +20,4 @@ services:
     environment:
       SERVER_URL: http://server:8000
       WIZARD_LLM_API_KEY: ${WIZARD_LLM_API_KEY:-}
+      PATH_PREFIX: ${AGENT_PATH_PREFIX:-}
