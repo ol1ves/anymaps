@@ -55,12 +55,48 @@ export function handleWizardResponse(transcript, response) {
     if (typeof question !== "string" || question.length === 0) {
       return { kind: "error", message: "invalid wizard response" };
     }
+    const secretRequests = Array.isArray(response.secretRequests) ? response.secretRequests : [];
+    if (secretRequests.length > 0) {
+      return {
+        kind: "secretRequests",
+        transcript: appendTurn(transcript, { role: "assistant", content: question }),
+        question,
+        secretRequests,
+      };
+    }
     return {
       kind: "clarify",
       transcript: appendTurn(transcript, { role: "assistant", content: question }),
     };
   }
   return { kind: "error", message: "invalid wizard response" };
+}
+
+// Verify each secret against the agent's /wizard/secrets route and return
+// bindings {id, secretId, shape}. The raw key only travels inside the POST
+// body to that route; it is never added to the transcript or logged here.
+export async function verifySecrets(secretRequests, values, agentBaseUrl, fetchImpl = fetch) {
+  const secrets = [];
+  for (const request of secretRequests) {
+    const value = values[request.id];
+    if (!value) throw new Error("missing secret value for " + request.id);
+    const response = await fetchImpl(agentBaseUrl + "/wizard/secrets", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ value, source: request.source, auth: request.auth }),
+    });
+    if (!response.ok) {
+      let detail = "secret verification failed";
+      try {
+        const body = await response.json();
+        if (body && typeof body.error === "string") detail = body.error;
+      } catch (e) { /* keep default */ }
+      throw new Error(detail);
+    }
+    const body = await response.json();
+    secrets.push({ id: request.id, secretId: body.secretId, shape: body.shape || null });
+  }
+  return secrets;
 }
 
 // --- Panel -------------------------------------------------------------
@@ -134,15 +170,7 @@ export function register(ctx) {
     } catch (e) { return null; }
   }
 
-  async function send(content) {
-    if (busy) return;
-    const text = (content || "").trim();
-    if (!text) return;
-
-    // Push the user message and render it.
-    transcript = appendTurn(transcript, { role: "user", content: text });
-    bubble("user", text);
-
+  async function sendTurn(messages, secrets) {
     setBusy(true);
     const thinking = bubble("assistant", "Thinking…", { busy: true });
 
@@ -154,7 +182,7 @@ export function register(ctx) {
       res = await fetch(agentUrl() + "/wizard/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: transcript }), // full transcript every turn
+        body: JSON.stringify({ messages, secrets }),
         signal: controller.signal,
       });
     } catch (err) {
@@ -165,7 +193,6 @@ export function register(ctx) {
         : "wizard request failed";
       bubble("assistant", msg, { error: true });
       setBusy(false);
-      // transcript keeps the user message so the user can retry.
       return;
     }
     clearTimeout(timer);
@@ -194,7 +221,7 @@ export function register(ctx) {
       return;
     }
 
-    const result = handleWizardResponse(transcript, response);
+    const result = handleWizardResponse(messages, response);
     thinking.remove();
 
     if (result.kind === "error") {
@@ -206,10 +233,17 @@ export function register(ctx) {
     if (result.kind === "clarify") {
       transcript = result.transcript;
       bubble("assistant", response.questions[0]);
-      // Clear the answered prompt so the user's reply does not require
-      // manual clearing before the next turn.
       input.value = "";
       setBusy(false);
+      return;
+    }
+
+    if (result.kind === "secretRequests") {
+      transcript = result.transcript;
+      bubble("assistant", result.question);
+      input.value = "";
+      setBusy(false);
+      collectSecrets(result.secretRequests);
       return;
     }
 
@@ -238,6 +272,49 @@ export function register(ctx) {
       // gallery is the recovery path, and the transcript is already reset.
     }
     setBusy(false);
+  }
+
+  function send(content) {
+    if (busy) return;
+    const text = (content || "").trim();
+    if (!text) return;
+
+    // Push the user message and render it.
+    transcript = appendTurn(transcript, { role: "user", content: text });
+    bubble("user", text);
+    sendTurn(transcript, []);
+  }
+
+  function collectSecrets(secretRequests) {
+    const values = {};
+    const host = document.createElement("div");
+    host.className = "anymaps-wizard-secrets";
+    for (const request of secretRequests) {
+      const field = document.createElement("input");
+      field.type = "password";
+      field.placeholder = "Enter key for " + request.id;
+      field.dataset.secretId = request.id;
+      field.addEventListener("input", () => { values[request.id] = field.value; });
+      host.appendChild(field);
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Verify & continue";
+    host.appendChild(button);
+    log.appendChild(host);
+    button.addEventListener("click", async () => {
+      setBusy(true);
+      try {
+        const secrets = await verifySecrets(secretRequests, values, agentUrl());
+        transcript = appendTurn(transcript, { role: "user", content: "I've provided the key(s). Proceed." });
+        bubble("user", "I've provided the key(s). Proceed.");
+        host.remove();
+        await sendTurn(transcript, secrets);
+      } catch (err) {
+        setBusy(false);
+        bubble("assistant", (err && err.message) || "secret verification failed", { error: true });
+      }
+    });
   }
 
   form.addEventListener("submit", (ev) => {

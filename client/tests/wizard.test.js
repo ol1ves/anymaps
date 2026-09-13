@@ -7,7 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendTurn, handleWizardResponse } from "../src/ui/wizard.js";
+import { appendTurn, handleWizardResponse, verifySecrets } from "../src/ui/wizard.js";
 
 test("appendTurn adds a message and keeps order", () => {
   const t0 = [];
@@ -99,4 +99,46 @@ test("handleWizardResponse error when response is not an object", () => {
     kind: "error",
     message: "invalid wizard response",
   });
+});
+
+test("handleWizardResponse secretRequests appends the question and flags key entry", () => {
+  const transcript = [{ role: "user", content: "NOAA stations" }];
+  const out = handleWizardResponse(transcript, {
+    done: false,
+    questions: ["This API needs a token header. Enter your key?"],
+    secretRequests: [
+      { id: "noaa-token", source: { url: "https://example.com" }, auth: { type: "header", name: "token", scheme: "" } },
+    ],
+  });
+  assert.equal(out.kind, "secretRequests");
+  assert.equal(out.question, "This API needs a token header. Enter your key?");
+  assert.deepEqual(out.secretRequests[0], { id: "noaa-token", source: { url: "https://example.com" }, auth: { type: "header", name: "token", scheme: "" } });
+  assert.deepEqual(out.transcript, [
+    { role: "user", content: "NOAA stations" },
+    { role: "assistant", content: "This API needs a token header. Enter your key?" },
+  ]);
+});
+
+test("verifySecrets posts each key to /wizard/secrets and returns bindings", async () => {
+  const posted = [];
+  const fetchImpl = async (url, options) => {
+    posted.push({ url, body: JSON.parse(options.body) });
+    return { ok: true, json: async () => ({ secretId: "sid-" + posted.length, shape: { ok: true } }) };
+  };
+  const secrets = await verifySecrets(
+    [
+      { id: "a", source: { url: "https://one.example" }, auth: { type: "header", name: "X" } },
+      { id: "b", source: { url: "https://two.example" }, auth: { type: "query", name: "key" } },
+    ],
+    { a: "key-a", b: "key-b" },
+    "http://agent",
+    fetchImpl,
+  );
+  assert.deepEqual(secrets, [
+    { id: "a", secretId: "sid-1", shape: { ok: true } },
+    { id: "b", secretId: "sid-2", shape: { ok: true } },
+  ]);
+  assert.equal(posted[0].url, "http://agent/wizard/secrets");
+  assert.equal(posted[0].body.value, "key-a");
+  assert.equal(posted[1].body.value, "key-b");
 });
