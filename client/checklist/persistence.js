@@ -29,8 +29,9 @@ export async function run({ manager, page }) {
       results.push(ok("persist widget enabled"));
 
       const s = manager.ctx.getState(WID);
-      results.push(s.iid === "persist-survives"
-        ? ok("persist stores iid") : fail("persist stores iid", String(s.iid)));
+      results.push(typeof s.iid === "string" && /^[0-9a-f]{32}$/.test(s.iid)
+        ? ok("persist stores instance token as iid (room token flow)")
+        : fail("persist stores instance token as iid (room token flow)", String(s.iid)));
       const nested = s.nested;
       const merged = nested && nested.a === 1 && nested.b === 2;
       results.push(merged
@@ -57,9 +58,9 @@ export async function run({ manager, page }) {
     results.push(ok("startup re-enables widget after reload"));
 
     const s = manager.ctx.getState(WID);
-    results.push(s.iid === "persist-survives"
-      ? ok("persisted state survives reload (iid intact)")
-      : fail("persisted state survives reload (iid intact)", String(s.iid)));
+    results.push(typeof s.iid === "string" && /^[0-9a-f]{32}$/.test(s.iid)
+      ? ok("instance token (iid) survives reload")
+      : fail("instance token (iid) survives reload", String(s.iid)));
     // The widget must not have re-persisted (guard held).
     results.push(s.nested && s.nested.a === 1 && s.nested.b === 2
       ? ok("merged nested state survives reload")

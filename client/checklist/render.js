@@ -1,7 +1,8 @@
 // render.js — render contract check group.
 // markers (emoji + url, color, label, title, rotation), update (move/restyle,
-// no duplicates), remove; polylines (replace vs append growth); popups (two
-// widgets, one global open, setPopupContent, anchored popup handled in sdk);
+// no duplicates), remove; polylines (points REPLACE then append growth);
+// popups (standalone open, setPopupContent update, anchored popup on the
+// widget's own marker, "popup not open" error, two widgets one global open);
 // panels (two stacked sections, clearPanel); styles (injected, anymaps-*
 // classes present).
 
@@ -55,13 +56,36 @@ export async function run({ manager, page }) {
     results.push(aCount === 1
       ? ok("removeMarker removed marker (no duplicate)") : fail("removeMarker removed marker (no duplicate)", "count " + aCount));
 
-    // Polyline append growth: 2 -> 3 coordinates.
+    // Polyline: full points REPLACE (2 -> 3) then append (3 -> 4). A length
+    // of 4 proves REPLACE semantics (ignored -> 3, treated-as-append -> 6).
     const srcId = "anymaps-polyline-src-" + a + "-ra-p1";
     const src = map.getSource(srcId);
     let coordsLen = -1;
     try { coordsLen = src.serialize().data.geometry.coordinates.length; } catch (e) { /* */ }
-    results.push(coordsLen === 3
-      ? ok("polyline append grew points 2 -> 3") : fail("polyline append grew points 2 -> 3", "coords " + coordsLen));
+    results.push(coordsLen === 4
+      ? ok("updatePolyline points replaces, then append grows (2 -> 3 -> 4)")
+      : fail("updatePolyline points replaces, then append grows (2 -> 3 -> 4)", "coords " + coordsLen));
+
+    // Popups (render-a stage, before render-b closes it): the anchored popup
+    // is open with content updated via setPopupContent.
+    const aPopups = doc.querySelectorAll(".maplibregl-popup.anymaps-popup");
+    results.push(aPopups.length === 1 && /anchored-updated/.test(aPopups[0].textContent)
+      ? ok("anchored popup opens on the widget's own marker")
+      : fail("anchored popup opens on the widget's own marker",
+        "count=" + aPopups.length + " text=" + (aPopups[0]?.textContent ?? "")));
+    results.push(aPopups.length === 1 && /anchored-updated/.test(aPopups[0].textContent)
+      ? ok("setPopupContent updates the open popup content")
+      : fail("setPopupContent updates the open popup content", "content mismatch"));
+
+    // "popup not open" error envelope for setPopupContent on a closed popup.
+    const gotErr = await waitForState(manager, a,
+      (s) => Array.isArray(s.raErrors) && s.raErrors.length >= 1, 3000);
+    const raErrs = manager.ctx.getState(a).raErrors ?? [];
+    const hasNotOpen = raErrs.some((e) => e && /popup not open/.test(e.error));
+    results.push(gotErr && hasNotOpen
+      ? ok("setPopupContent on a closed popup -> 'popup not open' error")
+      : fail("setPopupContent on a closed popup -> 'popup not open' error",
+        JSON.stringify(raErrs)));
 
     // Styles: a <style data-widget-id="render-a"> exists.
     const styleEl = doc.querySelector('style[data-widget-id="' + a + '"]');

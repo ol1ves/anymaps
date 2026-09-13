@@ -6,6 +6,7 @@
 import { createManager } from "../src/manager.js";
 import * as sdk from "./sdk.js";
 import * as render from "./render.js";
+import * as events from "./events.js";
 import * as camera from "./camera.js";
 import * as geo from "./geo.js";
 import * as lifecycle from "./lifecycle.js";
@@ -85,6 +86,7 @@ const page = {
 const GROUPS = [
   ["sdk", sdk],
   ["render", render],
+  ["events", events],
   ["camera", camera],
   ["geo", geo],
   ["lifecycle", lifecycle],
