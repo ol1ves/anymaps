@@ -5,8 +5,10 @@
  */
 
 :root {
+  color-scheme: light;
   --anymaps-accent: #2563eb;
   --anymaps-accent-hover: #1d4ed8;
+  --anymaps-accent-text: #2563eb;
   --anymaps-accent-soft: #eff6ff;
   --anymaps-fg: #1e293b;
   --anymaps-fg-muted: #475569;
@@ -26,6 +28,31 @@
     0 4px 12px rgba(15, 23, 42, 0.08);
   --anymaps-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
+}
+
+/* Dark theme tokens. Set when <html data-theme="dark"> is applied by the
+ * theme controller (src/ui/theme.js). Light values above stay the default.
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --anymaps-accent: #2563eb;
+  --anymaps-accent-hover: #1d4ed8;
+  --anymaps-accent-text: #93c5fd;
+  --anymaps-accent-soft: rgba(59, 130, 246, 0.16);
+  --anymaps-fg: #e2e8f0;
+  --anymaps-fg-muted: #cbd5e1;
+  --anymaps-fg-faint: #94a3b8;
+  --anymaps-bg: #0f172a;
+  --anymaps-surface: #1e293b;
+  --anymaps-border: #334155;
+  --anymaps-border-strong: #475569;
+  --anymaps-destructive: #f87171;
+  --anymaps-destructive-soft: rgba(239, 68, 68, 0.14);
+  --anymaps-success: #4ade80;
+  --anymaps-success-soft: rgba(34, 197, 94, 0.16);
+  --anymaps-ring: #93c5fd;
+  --anymaps-shadow-float: 0 1px 3px rgba(0, 0, 0, 0.5),
+    0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 /* ---- Base and layout ---- */
@@ -82,8 +109,52 @@ body {
 }
 
 .anymaps-brand-mark {
-  color: var(--anymaps-accent);
+  color: var(--anymaps-accent-text);
   flex: none;
+}
+
+.anymaps-theme-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--anymaps-border-strong);
+  background: var(--anymaps-surface);
+  color: var(--anymaps-fg-muted);
+  border-radius: var(--anymaps-radius-sm);
+  padding: 0;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease,
+    color 150ms ease;
+}
+
+.anymaps-theme-toggle:hover {
+  background: var(--anymaps-accent-soft);
+  border-color: var(--anymaps-accent-text);
+  color: var(--anymaps-accent-text);
+}
+
+.anymaps-theme-toggle:focus-visible {
+  outline: 2px solid var(--anymaps-ring);
+  outline-offset: 2px;
+}
+
+.anymaps-theme-toggle .anymaps-theme-icon {
+  display: block;
+}
+
+.anymaps-theme-toggle .anymaps-theme-icon-moon {
+  display: none;
+}
+
+:root[data-theme="dark"] .anymaps-theme-toggle .anymaps-theme-icon-sun {
+  display: none;
+}
+
+:root[data-theme="dark"] .anymaps-theme-toggle .anymaps-theme-icon-moon {
+  display: block;
 }
 
 /* ---- Sidebar sections ---- */
@@ -127,8 +198,8 @@ body {
 .anymaps-gallery-btn:hover,
 .anymaps-gallery-refresh:hover {
   background: var(--anymaps-accent-soft);
-  border-color: var(--anymaps-accent);
-  color: var(--anymaps-accent);
+  border-color: var(--anymaps-accent-text);
+  color: var(--anymaps-accent-text);
 }
 
 .anymaps-gallery-btn--danger {
@@ -395,13 +466,25 @@ body {
 
 #camera-badge button:hover {
   background: var(--anymaps-accent-soft);
-  border-color: var(--anymaps-accent);
-  color: var(--anymaps-accent);
+  border-color: var(--anymaps-accent-text);
+  color: var(--anymaps-accent-text);
 }
 
 #camera-badge button:focus-visible {
   outline: 2px solid var(--anymaps-ring);
   outline-offset: 2px;
+}
+
+/* ---- MapLibre stacking ---- */
+
+/* Markers carry large z-index values for per-widget draw order
+ * (commands/markers.js). Scope them inside the canvas container so they stay
+ * under MapLibre's control container (z-index 2) instead of over the zoom
+ * controls. */
+.maplibregl-canvas-container {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
 }
 
 /* ---- Markers ---- */
@@ -521,6 +604,39 @@ body {
 .anymaps-popup .maplibregl-popup-tip {
   border-top-color: var(--anymaps-surface);
   border-bottom-color: var(--anymaps-surface);
+}
+
+/* ---- Dark theme: MapLibre default controls ---- */
+
+:root[data-theme="dark"] .maplibregl-ctrl-group {
+  background: var(--anymaps-surface);
+  box-shadow: 0 0 0 2px var(--anymaps-border-strong);
+}
+
+:root[data-theme="dark"] .maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--anymaps-border);
+}
+
+:root[data-theme="dark"] .maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' fill='%23fff' viewBox='0 0 29 29'%3E%3Cpath d='M14.5 8.5c-.75 0-1.5.75-1.5 1.5v3h-3c-.75 0-1.5.75-1.5 1.5S9.25 16 10 16h3v3c0 .75.75 1.5 1.5 1.5S16 19.75 16 19v-3h3c.75 0 1.5-.75 1.5-1.5S19.75 13 19 13h-3v-3c0-.75-.75-1.5-1.5-1.5'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="dark"] .maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' fill='%23fff' viewBox='0 0 29 29'%3E%3Cpath d='M10 13c-.75 0-1.5.75-1.5 1.5S9.25 16 10 16h9c.75 0 1.5-.75 1.5-1.5S19.75 13 19 13z'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="dark"] .maplibregl-ctrl-compass .maplibregl-ctrl-icon {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' fill='%23fff' viewBox='0 0 29 29'%3E%3Cpath d='m10.5 14 4-8 4 8z'/%3E%3Cpath fill='%23ccc' d='m10.5 16 4 8 4-8z'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="dark"] .maplibregl-ctrl-scale {
+  background-color: var(--anymaps-surface);
+  border: 2px solid var(--anymaps-border-strong);
+  color: var(--anymaps-fg);
+}
+
+:root[data-theme="dark"] .anymaps-popup .maplibregl-popup-close-button:hover {
+  background-color: rgba(255, 255, 255, 0.12);
 }
 
 /* ---- Accessibility ---- */

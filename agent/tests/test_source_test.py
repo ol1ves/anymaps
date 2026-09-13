@@ -61,6 +61,25 @@ def test_secret_header_scheme_is_injected():
     assert verified.headers == {"Authorization": "Bearer secret-value"}
 
 
+def test_request_includes_default_user_agent(monkeypatch):
+    from shared.http import DEFAULT_USER_AGENT
+
+    allow_all_urls(monkeypatch)
+    seen = {}
+
+    def handler(request):
+        seen["ua"] = request.headers.get("User-Agent")
+        return httpx.Response(200, json={})
+
+    run(
+        source_test.test_source(
+            source_test.SourceSpec(url="https://example.com"),
+            transport=httpx.MockTransport(handler),
+        )
+    )
+    assert seen["ua"] == DEFAULT_USER_AGENT
+
+
 def test_successful_json_object_is_summarized(monkeypatch):
     allow_all_urls(monkeypatch)
 
@@ -157,6 +176,66 @@ def test_rejects_non_2xx_response(monkeypatch):
                 transport=transport,
             )
         )
+
+
+def test_source_retries_transient_5xx_then_succeeds(monkeypatch):
+    allow_all_urls(monkeypatch)
+    monkeypatch.setattr(source_test, "SOURCE_RETRY_BACKOFF_SECONDS", 0)
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(504)
+        return httpx.Response(200, json={"elements": []})
+
+    result = run(
+        source_test.test_source(
+            source_test.SourceSpec(url="https://example.com"),
+            transport=httpx.MockTransport(handler),
+        )
+    )
+    assert result["ok"] is True
+    assert len(calls) == 2
+
+
+def test_source_retries_transient_transport_error_then_succeeds(monkeypatch):
+    allow_all_urls(monkeypatch)
+    monkeypatch.setattr(source_test, "SOURCE_RETRY_BACKOFF_SECONDS", 0)
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.ReadError("connection reset")
+        return httpx.Response(200, json={"elements": []})
+
+    result = run(
+        source_test.test_source(
+            source_test.SourceSpec(url="https://example.com"),
+            transport=httpx.MockTransport(handler),
+        )
+    )
+    assert result["ok"] is True
+    assert len(calls) == 2
+
+
+def test_source_does_not_retry_non_transient_status(monkeypatch):
+    allow_all_urls(monkeypatch)
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(400)
+
+    with pytest.raises(source_test.SourceTestError, match="HTTP 400"):
+        run(
+            source_test.test_source(
+                source_test.SourceSpec(url="https://example.com"),
+                transport=httpx.MockTransport(handler),
+            )
+        )
+    assert len(calls) == 1
 
 
 def test_rejects_invalid_json(monkeypatch):

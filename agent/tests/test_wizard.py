@@ -37,6 +37,78 @@ def test_model_receives_schema_and_sdk_contract(monkeypatch):
     assert result["done"] is False
 
 
+def test_model_receives_wizard_flow_skill(monkeypatch):
+    import asyncio
+    import httpx
+    original = httpx.AsyncClient
+    def handler(request):
+        import json
+        body = json.loads(request.content)
+        prompt = body["messages"][0]["content"]
+        assert "Reasonable clarification test" in prompt
+        assert "Point of no return" in prompt
+        assert "Work conversationally" not in prompt
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"done":false,"questions":["Which source?"]}'}}]})
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    result = asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
+    assert result["done"] is False
+
+
+def test_call_deepseek_retries_transient_error_then_succeeds(monkeypatch):
+    import asyncio
+    import httpx
+    calls = []
+
+    async def fake_request(client, api_key, body):
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.ReadError("connection reset")
+        return {"choices": [{"message": {"content": '{"done":false,"questions":["Which source?"]}'}}]}
+
+    monkeypatch.setattr(main, "_request_deepseek_json", fake_request)
+    monkeypatch.setattr(main, "RETRY_BACKOFF_SECONDS", 0)
+    result = asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
+    assert result["done"] is False
+    assert len(calls) == 2
+
+
+def test_call_deepseek_surfaces_transient_cause_after_retries(monkeypatch):
+    import asyncio
+    import httpx
+    from fastapi import HTTPException
+
+    async def always_fail(client, api_key, body):
+        raise httpx.ReadError("connection reset")
+
+    monkeypatch.setattr(main, "_request_deepseek_json", always_fail)
+    monkeypatch.setattr(main, "RETRY_BACKOFF_SECONDS", 0)
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
+    assert exc_info.value.status_code == 500
+    assert "ReadError" in exc_info.value.detail
+
+
+def test_call_deepseek_does_not_retry_non_retryable_status(monkeypatch):
+    import asyncio
+    import httpx
+    from fastapi import HTTPException
+    calls = []
+
+    async def fake_request(client, api_key, body):
+        calls.append(1)
+        raise httpx.HTTPStatusError(
+            "unauthorized",
+            request=httpx.Request("POST", "https://api.deepseek.com/chat/completions"),
+            response=httpx.Response(401),
+        )
+
+    monkeypatch.setattr(main, "_request_deepseek_json", fake_request)
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
+    assert "401" in exc_info.value.detail
+    assert len(calls) == 1
+
+
 def test_rejects_empty_messages():
     response = client.post("/wizard/generate", json={"messages": []})
     assert response.status_code == 400
@@ -77,6 +149,20 @@ def test_model_rejects_multiple_questions():
     with pytest.raises(ValueError, match="clarifying response"):
         main._parse_model_response(
             {"done": False, "questions": ["One?", "Two?"]}
+        )
+
+
+def test_truncated_model_response_reports_length_not_invalid_json():
+    with pytest.raises(ValueError, match="truncated"):
+        main._extract_json_content(
+            {"choices": [{"finish_reason": "length", "message": {"content": ""}}]}
+        )
+
+
+def test_invalid_model_json_reports_invalid_json():
+    with pytest.raises(ValueError, match="invalid JSON"):
+        main._extract_json_content(
+            {"choices": [{"finish_reason": "stop", "message": {"content": "{not json"}}]}
         )
 
 
