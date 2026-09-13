@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from shared.schema import load_manifest_schema
 from shared.proxy import create_prefix_strip_middleware
+from .prompt import build_system_prompt
 from .generator import (
     MAX_EXTERNAL_SOURCES,
     publish_widget,
@@ -87,42 +88,6 @@ Only after the user explicitly approves the proposed result may a later wizard
 stage return done=true. For a ready internal candidate, return done=true with
 widgetId, version, manifest, and bundle. The service removes bundle before it
 responds to the client. Do not put API keys or other secrets in your response.
-"""
-
-
-GENERATION_CONTRACT = """
-Generate a classic JavaScript script using an async IIFE. The host supplies
-global anymaps. Begin with const {config, state} = await anymaps.ready().
-config has widgetId, baseUrl, channelRoutes (absolute URLs keyed by channel id).
-Use fetch on these provisioned routes, never call external sources from a widget.
-GET returns {records: [...]} containing original source records, not renamed
-fields. External record mappings are JMESPath expressions used for indexing.
-Filters: bounds=south,west,north,east; ids=comma-separated; latest=1;
-since/until=unix seconds. Only use filters supported by declared record mappings.
-Private read/write routes append /instances/{token}. POST
-{baseUrl}/widgets/{widgetId}/instances returns {instanceToken}; persist as iid.
-Client writes POST one raw record. A client read's source must name a client
-write channel of matching visibility. All channel ids must be unique.
-External channels are public read channels. Secrets go only in external.auth
-as {type: 'header'|'query', name, secret: secretId, scheme?: prefix}.
-Do not invent a secretId; ask the user to verify it outside the chat first.
-SDK methods: addMarker/updateMarker({id,lat,lng,icon?,label?,title?,rotation?});
-removeMarker(id); addPolyline({id,points:[[lat,lng],...],color?,width?});
-updatePolyline({id,points?|append?,color?,width?}); removePolyline(id);
-setPanel({title?,content: html}); clearPanel(); setStyles(cssText);
-openPopup({id,content,lat?,lng?,anchorMarkerId?}); closePopup(id);
-setPopupContent({id,content}); persist(partialState);
-startGeolocation({highAccuracy?}); stopGeolocation();
-requestCameraControl(); releaseCameraControl(); flyTo/jumpTo({center:[lat,lng],zoom?,bearing?});
-fitBounds({bounds:[[south,west],[north,east]]}). Request camera control and wait
-for cameraGranted before moving the map.
-anymaps.on(name, handler) subscribes: viewportChanged({bounds,center,zoom}),
-markerClick({markerId}), mapClick({lat,lng}), geolocation({lat,lng,accuracy}),
-geolocationError({code,message}), cameraGranted, cameraRevoked({reason}),
-error({id,error}). Coordinates are [lat,lng]; times are unix seconds.
-No DOM, window, navigator, localStorage, imports, or raw postMessage in bundles.
-Panels contain HTML but have no form-input SDK event; use persisted state for
-settings. Escape external strings before including them in HTML.
 """
 
 
@@ -427,12 +392,10 @@ async def _request_deepseek_json(
 def _build_deepseek_body(messages: list[Message]) -> dict[str, Any]:
     """Assemble the system prompt and transcript for one DeepSeek request."""
 
-    system = (
-        SYSTEM_PROMPT
-        + load_skill_body(WIZARD_FLOW_SKILL)
-        + load_skill_body(WIDGET_EXAMPLES_SKILL)
-        + GENERATION_CONTRACT
-        + "\nManifest JSON Schema:\n" + json.dumps(load_manifest_schema())
+    system = build_system_prompt(
+        SYSTEM_PROMPT,
+        load_skill_body(WIZARD_FLOW_SKILL),
+        load_skill_body(WIDGET_EXAMPLES_SKILL),
     )
     return {
         "model": os.getenv("WIZARD_LLM_MODEL", DEEPSEEK_MODEL),

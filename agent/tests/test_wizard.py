@@ -30,12 +30,16 @@ def test_model_receives_schema_and_sdk_contract(monkeypatch):
         assert "config.channelRoutes" in prompt or "channelRoutes" in prompt
         assert '"$schema"' in prompt
         assert "cameraGranted" in prompt
-        assert "center:[lat,lng]" in prompt
-        # SDK contract must match the real SDK payloads (SPEC.md section 7).
-        assert "markerClick({markerId})" in prompt
-        assert "mapClick({lat,lng})" in prompt
-        assert "bearing?" in prompt
-        assert "error({id,error})" in prompt
+        assert "globalThis.anymaps" in prompt
+        # SDK contract must match the real SDK payloads (SPEC.md section 7 /
+        # CONTRACTS.md sections 3-6).
+        assert "fitBounds" in prompt
+        assert "[lat,lng]" in prompt
+        assert "markerId" in prompt
+        assert "mapClick" in prompt
+        assert "bearing" in prompt
+        assert '"kind": "error"' in prompt
+        assert "instanceToken" in prompt
         return httpx.Response(200, json={"choices": [{"message": {"content": '{"done":false,"questions":["Which source?"]}'}}]})
     monkeypatch.setattr(main.httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
     result = asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
@@ -708,3 +712,11 @@ def test_raw_key_never_reaches_llm_or_manifest(monkeypatch):
     for messages in llm_bodies:
         for message in messages:
             assert "secret-value" not in message.content
+
+
+def test_deepseek_body_uses_authoritative_prompt_and_omits_old_contract():
+    body = main._build_deepseek_body([])
+    system = body["messages"][0]["content"]
+    assert "globalThis.anymaps" in system
+    assert "api.adsb.lol" in system
+    assert "SDK methods: addMarker" not in system
