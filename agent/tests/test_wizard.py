@@ -378,3 +378,38 @@ def test_model_id_reads_env_override(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
     asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
     assert seen["model"] == "deepseek-test"
+
+
+def test_call_deepseek_repairs_invalid_json_once(monkeypatch):
+    import asyncio
+    calls = []
+
+    async def fake_request(client, api_key, body):
+        calls.append(body)
+        if len(calls) == 1:
+            return {"choices": [{"finish_reason": "stop", "message": {"content": "{not json"}}]}
+        return {"choices": [{"message": {"content": '{"done":false,"questions":["Which source?"]}'}}]}
+
+    monkeypatch.setattr(main, "_request_deepseek_json", fake_request)
+    monkeypatch.setattr(main, "RETRY_BACKOFF_SECONDS", 0)
+    result = asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
+    assert result["done"] is False
+    assert len(calls) == 2
+    assert "rejected" in calls[1]["messages"][-1]["content"]
+
+
+def test_call_deepseek_surfaces_parse_error_after_repair(monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    calls = []
+
+    async def always_bad(client, api_key, body):
+        calls.append(1)
+        return {"choices": [{"finish_reason": "stop", "message": {"content": "{not json"}}]}
+
+    monkeypatch.setattr(main, "_request_deepseek_json", always_bad)
+    monkeypatch.setattr(main, "RETRY_BACKOFF_SECONDS", 0)
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
+    assert "invalid JSON" in exc_info.value.detail
+    assert len(calls) == 2

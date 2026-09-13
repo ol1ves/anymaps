@@ -51,6 +51,7 @@ MAX_OUTPUT_TOKENS = 32_000
 # Transient DeepSeek failures (connection resets during long generations,
 # rate limits, and 5xx) get one retry before the wizard turn fails.
 MAX_DEEPSEEK_ATTEMPTS = 2
+MAX_REPAIR_ATTEMPTS = 1
 RETRY_BACKOFF_SECONDS = 2.0
 RETRYABLE_HTTP_STATUS = frozenset({429, 500, 502, 503, 504})
 RETRYABLE_TRANSPORT_ERRORS = (
@@ -377,11 +378,16 @@ def _build_deepseek_body(messages: list[Message]) -> dict[str, Any]:
     }
 
 
-async def call_deepseek(messages: list[Message], api_key: str) -> dict[str, Any]:
-    """Make one bounded DeepSeek request for a wizard turn, retrying transient errors once."""
+async def _request_parsed_once(
+    messages: list[Message], api_key: str
+) -> dict[str, Any]:
+    """One wizard turn with transport retries, then parse/normalize.
+
+    Raises ValueError when the HTTP body is not a valid wizard response;
+    raises HTTPException for transport or HTTP failures.
+    """
 
     body = _build_deepseek_body(messages)
-
     last_cause = "unknown"
     for attempt in range(MAX_DEEPSEEK_ATTEMPTS):
         try:
@@ -401,15 +407,41 @@ async def call_deepseek(messages: list[Message], api_key: str) -> dict[str, Any]
         except ValueError as exc:
             raise HTTPException(status_code=500, detail="DeepSeek request failed") from exc
         else:
-            try:
-                return _parse_model_response(_extract_json_content(response_json))
-            except ValueError as exc:
-                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            return _parse_model_response(_extract_json_content(response_json))
 
         if attempt < MAX_DEEPSEEK_ATTEMPTS - 1:
             await asyncio.sleep(RETRY_BACKOFF_SECONDS)
 
     raise HTTPException(status_code=500, detail=f"DeepSeek request failed ({last_cause})")
+
+
+async def call_deepseek(messages: list[Message], api_key: str) -> dict[str, Any]:
+    """Make a bounded DeepSeek request for a wizard turn.
+
+    Transient transport errors are retried once, and a response that fails to
+    parse or validate is retried once with the concrete error fed back to the
+    model so it can self-correct.
+    """
+
+    current = list(messages)
+    last_parse_error = "unknown"
+    for repair in range(MAX_REPAIR_ATTEMPTS + 1):
+        try:
+            return await _request_parsed_once(current, api_key)
+        except ValueError as exc:
+            last_parse_error = str(exc)
+        if repair < MAX_REPAIR_ATTEMPTS:
+            current = current + [
+                Message(
+                    role="user",
+                    content=(
+                        "Your previous response was rejected: "
+                        + last_parse_error
+                        + " Reply with corrected JSON only."
+                    ),
+                )
+            ]
+    raise HTTPException(status_code=500, detail=last_parse_error)
 
 
 @app.post("/wizard/generate")
