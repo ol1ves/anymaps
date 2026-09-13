@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createGeoProxy, makeDotHandler } from "../src/geo.js";
+import { createGeoProxy, makeDotHandler, register } from "../src/geo.js";
 
 function makeHarness() {
   const events = [];
@@ -204,4 +204,76 @@ test("dot handler hide without a show is a no-op", () => {
   const dots = makeDotHandler({ map: "MAP", createMarker: () => fakeMarker(log) });
   dots.hide();
   assert.deepEqual(log, []);
+});
+
+// --- accuracy upgrade on re-start ---
+
+test("re-start by a subscribed widget upgrades the shared watch accuracy", () => {
+  const h = makeHarness();
+  const proxy = createGeoProxy(h);
+  proxy.start("a", {});
+  proxy.start("a", { highAccuracy: true });
+
+  // One subscriber, but the watch restarted at high accuracy.
+  assert.deepEqual(proxy.subscribers(), ["a"]);
+  assert.equal(h.calls.watch, 2);
+  assert.equal(h.calls.clear, 1);
+  assert.equal(h.watches[0].cleared, true);
+  assert.deepEqual(h.watches[1].options, { enableHighAccuracy: true });
+
+  // Fixes flow from the new watch; stop still releases it cleanly.
+  h.watches[1].success({ coords: { latitude: 5, longitude: 6, accuracy: 1 } });
+  assert.deepEqual(h.events.at(-1), fixEvt({ lat: 5, lng: 6, accuracy: 1 }));
+  proxy.stop("a");
+  assert.equal(h.calls.clear, 2);
+  assert.deepEqual(h.events.at(-1), dotOff());
+});
+
+// --- register wiring: cleanup guard across disable/re-enable cycles ---
+
+function makeWiringHarness() {
+  const h = makeHarness();
+  const commands = new Map();
+  const cleanups = [];
+  const emitted = [];
+  const ctx = {
+    map: {},
+    registerCommand(name, fn) { commands.set(name, fn); },
+    registerCleanup(_widgetId, fn) { cleanups.push(fn); },
+    emit(widgetId, name, payload) { emitted.push({ widgetId, name, payload }); },
+  };
+  register(ctx, {
+    geolocation: { watchPosition: h.watchPosition, clearWatch: h.clearWatch },
+  });
+  return { h, commands, cleanups, emitted };
+}
+
+test("cleanup fn clears the guard: re-enable cycle re-registers and unsubscribes", () => {
+  const { h, commands, cleanups } = makeWiringHarness();
+  const start = commands.get("startGeolocation");
+
+  // First enable cycle: start, then disable runs the registered cleanup.
+  start({}, "w1");
+  assert.equal(h.calls.watch, 1);
+  assert.equal(cleanups.length, 1);
+  cleanups[0]();
+  assert.equal(h.calls.clear, 1);
+
+  // Re-enable: the stale guard must not skip registration. A fresh cleanup
+  // fn exists and unsubscribes the resubscribed widget.
+  start({}, "w1");
+  assert.equal(h.calls.watch, 2, "widget resubscribes after re-enable");
+  assert.equal(cleanups.length, 2, "cleanup re-registered after re-enable");
+  cleanups[1]();
+  assert.equal(h.calls.clear, 2, "second disable stops the shared watch");
+});
+
+test("cleanup registers once per enable cycle across repeated starts", () => {
+  const { commands, cleanups } = makeWiringHarness();
+  const start = commands.get("startGeolocation");
+
+  start({}, "w1");
+  start({ highAccuracy: true }, "w1");
+  start({}, "w1");
+  assert.equal(cleanups.length, 1);
 });

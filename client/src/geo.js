@@ -63,7 +63,9 @@ export function createGeoProxy({ watchPosition, clearWatch, onEvent }) {
 
   return {
     start(widgetId, { highAccuracy = false } = {}) {
-      if (subs.has(widgetId)) return;
+      // Set dedupes the subscriber. A re-start by an already-subscribed
+      // widget still reaches ensureWatch so a highAccuracy request can
+      // upgrade the shared watch.
       subs.add(widgetId);
       ensureWatch({ enableHighAccuracy: !!highAccuracy });
     },
@@ -87,8 +89,6 @@ export function createGeoProxy({ watchPosition, clearWatch, onEvent }) {
 // Main-thread wiring
 
 import maplibregl from "maplibre-gl";
-
-const cleanupRegistered = new Set(); // widgets with a cleanup fn already registered
 
 // Dot lifecycle: show(payload) positions the marker with setLngLat BEFORE
 // addTo, then assigns it. MapLibre throws on addTo without a position, so
@@ -116,8 +116,17 @@ export function makeDotHandler({ map, createMarker }) {
   };
 }
 
-export function register(ctx) {
-  const geo = typeof navigator !== "undefined" ? navigator.geolocation : null;
+export function register(ctx, deps = {}) {
+  // Optional injected geolocation keeps register testable under Node; the
+  // browser path reads navigator.geolocation.
+  const geo = deps.geolocation ??
+    (typeof navigator !== "undefined" ? navigator.geolocation : null);
+
+  // Scoped to this register call so a manager re-construct cannot inherit
+  // stale guards. The cleanup fn deletes its widgetId so disable/re-enable
+  // cycles re-register (a module-level Set leaked across cycles: the second
+  // disable never unsubscribed and the shared watch survived).
+  const cleanupRegistered = new Set();
 
   const dots = makeDotHandler({
     map: ctx.map,
@@ -151,11 +160,15 @@ export function register(ctx) {
       ctx.emit(widgetId, "geolocationError", { code: 2, message: "geolocation unavailable" });
       return;
     }
-    // Idempotent guard: register the cleanup fn once per widget, no matter
-    // how many times it starts/stops geolocation.
+    // Idempotent guard: register the cleanup fn once per enable cycle, no
+    // matter how many times the widget starts/stops geolocation. The fn
+    // clears its own guard so a re-enable registers a fresh cleanup.
     if (!cleanupRegistered.has(widgetId)) {
       cleanupRegistered.add(widgetId);
-      ctx.registerCleanup(widgetId, () => proxy.unsubscribe(widgetId));
+      ctx.registerCleanup(widgetId, () => {
+        proxy.unsubscribe(widgetId);
+        cleanupRegistered.delete(widgetId);
+      });
     }
     proxy.start(widgetId, { highAccuracy: !!payload?.highAccuracy });
   });
