@@ -28,6 +28,12 @@ def test_parse_latest_flag():
     assert filter_mod.parse_filters({"latest": "1"})["latest"] is True
 
 
+def test_parse_latest_rejects_other_values():
+    for bad in ("0", "true", "True", ""):
+        with pytest.raises(filter_mod.FilterError):
+            filter_mod.parse_filters({"latest": bad})
+
+
 def test_validate_requires_declared_fields():
     with pytest.raises(filter_mod.FilterError):
         filter_mod.validate_filters({}, {"bounds": (0, 0, 1, 1)})
