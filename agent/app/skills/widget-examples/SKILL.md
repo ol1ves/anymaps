@@ -61,7 +61,7 @@ be tested and its shape verified before you write record mappings.
 {
   "done": false,
   "plan": {
-    "proposal": "Approve publishing weather widget 'ny-weather' v1.0.0?",
+    "proposal": "Approve publishing weather widget 'ny-weather' v1.0.0 — GET NOAA CDO stations for NY (https://www.ncei.noaa.gov/cdo-web/api/v2/stations?locationid=FIPS:36) with a token header; map each station as a marker.",
     "sources": [
       {
         "id": "noaa-token",

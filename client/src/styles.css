@@ -386,6 +386,59 @@ body {
   font-style: italic;
 }
 
+.anymaps-wizard-secrets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.anymaps-wizard-secret-input {
+  font: 13px/1.4 var(--anymaps-font);
+  color: var(--anymaps-fg);
+  background: var(--anymaps-surface);
+  border: 1px solid var(--anymaps-border-strong);
+  border-radius: var(--anymaps-radius-sm);
+  padding: 6px 10px;
+}
+
+.anymaps-wizard-secret-input::placeholder {
+  color: var(--anymaps-fg-faint);
+}
+
+.anymaps-wizard-secret-input:focus {
+  outline: 2px solid var(--anymaps-ring);
+  outline-offset: -1px;
+  border-color: var(--anymaps-accent);
+}
+
+.anymaps-wizard-secret-submit {
+  font: 13px/1.4 var(--anymaps-font);
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--anymaps-accent);
+  border: 1px solid var(--anymaps-accent);
+  border-radius: var(--anymaps-radius-sm);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.anymaps-wizard-secret-submit:hover {
+  background: var(--anymaps-accent-hover);
+  border-color: var(--anymaps-accent-hover);
+}
+
+.anymaps-wizard-secret-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.anymaps-wizard-secret-submit:focus-visible {
+  outline: 2px solid var(--anymaps-ring);
+  outline-offset: 2px;
+}
+
 /* ---- Widget panels ---- */
 
 .anymaps-panel {
