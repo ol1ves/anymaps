@@ -48,6 +48,22 @@ def test_provision_rejects_source_not_a_write_channel(client):
     assert r.json() == {"error": "source channel not found"}
 
 
+def test_reprovision_changed_manifest_returns_stored_routes(client, caplog):
+    import logging
+
+    r1 = client.post("/widgets/find-my-friends/provision", json={"manifest": FMF_MANIFEST})
+    changed = copy.deepcopy(FMF_MANIFEST)
+    changed["server"]["channels"].append(
+        {"id": "extraW", "origin": "client", "direction": "write", "visibility": "public"}
+    )
+    with caplog.at_level(logging.WARNING, logger="anymaps.server"):
+        r2 = client.post("/widgets/find-my-friends/provision", json={"manifest": changed})
+    assert r2.status_code == 200
+    assert r2.json() == r1.json()
+    assert "extraW" not in r2.json()["channelRoutes"]
+    assert any("first-wins" in rec.message for rec in caplog.records)
+
+
 def test_provision_starts_external_poller(client):
     async def noop(widget_id, channel):
         return None
