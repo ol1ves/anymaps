@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createGeoProxy } from "../src/geo.js";
+import { createGeoProxy, makeDotHandler } from "../src/geo.js";
 
 function makeHarness() {
   const events = [];
@@ -154,4 +154,54 @@ test("stop of an unknown widget is a no-op", () => {
   proxy.stop("ghost");
   assert.equal(h.calls.clear, 0);
   assert.deepEqual(proxy.subscribers(), ["a"]);
+});
+
+// --- dot wiring (regression: MapLibre throws on addTo without a position) ---
+
+function fakeMarker(log) {
+  return {
+    setLngLat(pos) { log.push(["setLngLat", pos]); return this; },
+    addTo(map) { log.push(["addTo", map]); return this; },
+    remove() { log.push(["remove"]); },
+  };
+}
+
+test("dot handler positions the marker before adding it to the map", () => {
+  const log = [];
+  let created = 0;
+  const dots = makeDotHandler({
+    map: "MAP",
+    createMarker() { created++; return fakeMarker(log); },
+  });
+
+  dots.show({ lat: 40.71, lng: -74.0 });
+  assert.deepEqual(log, [
+    ["setLngLat", [-74.0, 40.71]],
+    ["addTo", "MAP"],
+  ]);
+
+  // Later fixes reposition without re-adding.
+  dots.show({ lat: 41, lng: -73 });
+  assert.deepEqual(log, [
+    ["setLngLat", [-74.0, 40.71]],
+    ["addTo", "MAP"],
+    ["setLngLat", [-73, 41]],
+  ]);
+
+  // Hide removes and clears; the next show builds a fresh marker.
+  dots.hide();
+  assert.deepEqual(log.at(-1), ["remove"]);
+  dots.show({ lat: 42, lng: -72 });
+  assert.deepEqual(log.slice(-2), [
+    ["setLngLat", [-72, 42]],
+    ["addTo", "MAP"],
+  ]);
+  assert.equal(created, 2);
+});
+
+test("dot handler hide without a show is a no-op", () => {
+  const log = [];
+  const dots = makeDotHandler({ map: "MAP", createMarker: () => fakeMarker(log) });
+  dots.hide();
+  assert.deepEqual(log, []);
 });

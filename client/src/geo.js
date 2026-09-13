@@ -89,25 +89,44 @@ export function createGeoProxy({ watchPosition, clearWatch, onEvent }) {
 import maplibregl from "maplibre-gl";
 
 const cleanupRegistered = new Set(); // widgets with a cleanup fn already registered
-let dot = null; // maplibregl.Marker with div.anymaps-user-dot
 
-function makeDot(map) {
-  const el = document.createElement("div");
-  el.className = "anymaps-user-dot";
-  const marker = new maplibregl.Marker({ element: el });
-  marker.addTo(map);
-  return marker;
-}
-
-function removeDot() {
-  if (dot) {
-    dot.remove();
-    dot = null;
-  }
+// Dot lifecycle: show(payload) positions the marker with setLngLat BEFORE
+// addTo, then assigns it. MapLibre throws on addTo without a position, so
+// ordering is pinned. hide() removes and clears. Injected createMarker keeps
+// this testable without a DOM.
+export function makeDotHandler({ map, createMarker }) {
+  let dot = null;
+  return {
+    show(payload) {
+      const pos = [payload.lng, payload.lat];
+      if (!dot) {
+        dot = createMarker();
+        dot.setLngLat(pos);
+        dot.addTo(map);
+      } else {
+        dot.setLngLat(pos);
+      }
+    },
+    hide() {
+      if (dot) {
+        dot.remove();
+        dot = null;
+      }
+    },
+  };
 }
 
 export function register(ctx) {
   const geo = typeof navigator !== "undefined" ? navigator.geolocation : null;
+
+  const dots = makeDotHandler({
+    map: ctx.map,
+    createMarker() {
+      const el = document.createElement("div");
+      el.className = "anymaps-user-dot";
+      return new maplibregl.Marker({ element: el });
+    },
+  });
 
   const proxy = createGeoProxy({
     watchPosition: geo ? geo.watchPosition.bind(geo) : null,
@@ -121,12 +140,8 @@ export function register(ctx) {
         }
       }
       if (event.type === "dot") {
-        if (event.visible) {
-          if (!dot) dot = makeDot(ctx.map);
-          dot.setLngLat([event.payload.lng, event.payload.lat]);
-        } else {
-          removeDot();
-        }
+        if (event.visible) dots.show(event.payload);
+        else dots.hide();
       }
     },
   });
