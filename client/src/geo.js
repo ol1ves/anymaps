@@ -21,6 +21,14 @@ export function createGeoProxy({ watchPosition, clearWatch, onEvent }) {
   let watchOptions = null;
   let latestFix = null;
   const subs = new Set();
+  const hiddenDots = new Set();
+
+  function dotVisible() {
+    for (const widgetId of subs) {
+      if (!hiddenDots.has(widgetId)) return true;
+    }
+    return false;
+  }
 
   function ensureWatch(options) {
     // Keep the higher accuracy setting if subscribers disagree; starting a
@@ -35,7 +43,7 @@ export function createGeoProxy({ watchPosition, clearWatch, onEvent }) {
             lng: coords.longitude,
             accuracy: coords.accuracy,
           };
-          onEvent({ type: "dot", visible: true, payload: latestFix });
+          onEvent({ type: "dot", visible: dotVisible(), payload: latestFix });
           onEvent({ type: "fix", payload: latestFix });
         },
         (err) => {
@@ -57,21 +65,28 @@ export function createGeoProxy({ watchPosition, clearWatch, onEvent }) {
       watchId = null;
       watchOptions = null;
       latestFix = null;
+      hiddenDots.clear();
       onEvent({ type: "dot", visible: false });
     }
   }
 
   return {
-    start(widgetId, { highAccuracy = false } = {}) {
+    start(widgetId, { highAccuracy = false, showUserDot = true } = {}) {
       // Set dedupes the subscriber. A re-start by an already-subscribed
       // widget still reaches ensureWatch so a highAccuracy request can
       // upgrade the shared watch.
       subs.add(widgetId);
+      if (showUserDot === false) hiddenDots.add(widgetId);
+      else hiddenDots.delete(widgetId);
       ensureWatch({ enableHighAccuracy: !!highAccuracy });
     },
 
     stop(widgetId) {
       subs.delete(widgetId);
+      hiddenDots.delete(widgetId);
+      if (watchId !== null && subs.size > 0 && !dotVisible()) {
+        onEvent({ type: "dot", visible: false });
+      }
       releaseWatch();
     },
 
@@ -173,7 +188,10 @@ export function register(ctx, deps = {}) {
         cleanupRegistered.delete(widgetId);
       });
     }
-    proxy.start(widgetId, { highAccuracy: !!payload?.highAccuracy });
+    proxy.start(widgetId, {
+      highAccuracy: !!payload?.highAccuracy,
+      showUserDot: payload?.showUserDot !== false,
+    });
   });
 
   ctx.registerCommand("stopGeolocation", (_payload, widgetId) => {

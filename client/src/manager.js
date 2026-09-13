@@ -19,6 +19,7 @@ import { register as registerGeo } from "./geo.js";
 import { register as registerInstall } from "./install.js";
 import { register as registerGallery } from "./ui/gallery.js";
 import { register as registerWizard } from "./ui/wizard.js";
+import { register as registerStatusbar } from "./ui/statusbar.js";
 import {
   register as registerTheme,
   mapStyleFor,
@@ -197,6 +198,7 @@ export function createManager() {
   registerInstall(ctx);
   registerGallery(ctx);
   registerWizard(ctx);
+  registerStatusbar(ctx);
   registerTheme(ctx);
 
   function postError(worker, id, error) {

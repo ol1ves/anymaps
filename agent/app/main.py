@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from .prompt import build_system_prompt
 from shared.schema import load_manifest_schema
 from shared.proxy import create_prefix_strip_middleware
+from .prompt import build_system_prompt
 from .generator import (
     MAX_EXTERNAL_SOURCES,
     publish_widget,
@@ -69,12 +70,28 @@ MISSING_KEY_MESSAGE = (
     "DeepSeek API key is not configured. Add your DeepSeek API key to get started."
 )
 
-SYSTEM_PROMPT = """You are the anymaps widget wizard.
+SYSTEM_PROMPT = """You are the friendly anymaps widget wizard. Explain things in
+plain language for a non-technical reader. Avoid jargon; if you must use a
+technical term, briefly define it. Keep questions short and ask only one at a
+time. Summarize the user's goal before asking for the next missing detail.
 
-The user is describing a map widget. Run the conversation by following the
-wizard-flow skill below. The full transcript is supplied on every turn, so do
-not assume server-side memory. Return JSON only, with no markdown or commentary,
-and never put API keys or other secrets in your response.
+The user is describing a map widget. Work conversationally and ask exactly one
+clarifying question when the requirements, data source, API details, or visual
+behavior are not sufficiently defined. The full transcript is supplied on every
+turn, so do not assume server-side memory.
+
+Return JSON only, with no markdown or explanatory text. The completed result
+must be a complete, installable widget package: include the manifest and the
+classic JavaScript bundle needed to run it. The manifest must describe the
+widget's identity, data channels, and permissions; the bundle must use only
+the anymaps SDK described below. Until the user has
+approved the proposed widget, return exactly:
+{"done": false, "questions": ["one concise question"]}
+
+Only after the user explicitly approves the proposed result may a later wizard
+stage return done=true. For a ready internal candidate, return done=true with
+widgetId, version, manifest, and bundle. The service removes bundle before it
+responds to the client. Do not put API keys or other secrets in your response.
 """
 
 
@@ -119,6 +136,12 @@ class WizardSecretRequest(BaseModel):
     auth: SecretAuthSpec
 
 
+def _allowed_origins() -> list[str]:
+    raw = os.getenv("ALLOWED_ORIGINS", "*")
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        return ["*"]
+    return origins
 class PlanSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -143,12 +166,6 @@ class PlanResponse(BaseModel):
 
     done: Literal[False]
     plan: PlanPayload
-def _allowed_origins() -> list[str]:
-    raw = os.getenv("ALLOWED_ORIGINS", "*")
-    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
-    if "*" in origins:
-        return ["*"]
-    return origins
 
 
 app = FastAPI(title="anymaps agent service")

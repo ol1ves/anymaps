@@ -6,8 +6,9 @@
 // button, and a list of published widgets. Each item shows name,
 // description, version, and an optional icon, plus controls by state:
 //   - not installed      -> Install button -> ctx.manager.install(id, version)
-//   - installed + enabled -> "Enabled" badge, Disable, Uninstall
-//   - installed + disabled -> Enable (re-install path), Uninstall
+//   - installed + enabled -> "Enabled" badge, optional Update, Disable,
+//     Uninstall
+//   - installed + disabled -> Enable or optional Update, Uninstall
 // It subscribes to ctx.bus events widget-enabled / widget-disabled /
 // widget-uninstalled and re-renders from ctx.manager.list() + server data.
 // Styling lives in src/styles.css under the anymaps-gallery-* classes.
@@ -140,6 +141,8 @@ export function register(ctx) {
       const entry = reg.get(item.id);
       const installed = !!entry;
       const enabled = !!(entry && entry.enabled);
+      const outdated = installed && isNonEmptyString(item.version) &&
+        entry.version !== item.version;
       const inFlight = pending.has(item.id);
 
       const controls = document.createElement("div");
@@ -169,6 +172,22 @@ export function register(ctx) {
         controls.appendChild(span);
       }
 
+      async function updateToLatest() {
+        pending.add(item.id);
+        render();
+        try {
+          if (entry && entry.enabled) ctx.manager.disable(item.id);
+          await ctx.manager.install(item.id, item.version);
+        } catch (e) {
+          pending.delete(item.id);
+          render();
+          renderErrFor(item.id, e.message || "update failed");
+          return;
+        }
+        pending.delete(item.id);
+        render();
+      }
+
       if (inFlight) {
         addBadge("Installing…");
       } else if (!installed) {
@@ -192,6 +211,7 @@ export function register(ctx) {
         });
       } else if (enabled) {
         addBadge("Enabled");
+        if (outdated) addBtn("Update", updateToLatest);
         addBtn("Disable", () => ctx.manager.disable(item.id));
         addBtn("Uninstall", () => ctx.manager.uninstall(item.id), { danger: true });
       } else {
@@ -200,7 +220,7 @@ export function register(ctx) {
         // stored version"). Falls back to the listed version only when the
         // registry has no entry.
         const storedVersion = (entry && entry.version) || item.version;
-        addBtn("Enable", async () => {
+        const enable = async () => {
           pending.add(item.id);
           render();
           try {
@@ -216,7 +236,8 @@ export function register(ctx) {
           }
           pending.delete(item.id);
           render();
-        });
+        };
+        addBtn(outdated ? "Update" : "Enable", outdated ? updateToLatest : enable);
         addBtn("Uninstall", () => ctx.manager.uninstall(item.id), { danger: true });
       }
 
