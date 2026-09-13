@@ -47,6 +47,8 @@ def _effective_mapping(db, widget_id, channel):
         if row is None:
             raise HTTPException(status_code=404, detail="source channel not found")
         return json.loads(row["config"]).get("record", {})
+    if channel["origin"] == "external":
+        return channel.get("external", {}).get("record") or channel.get("record", {})
     return channel.get("record", {})
 
 

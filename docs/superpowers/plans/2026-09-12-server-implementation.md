@@ -533,6 +533,12 @@ def _to_str(value):
     return str(value)
 
 
+def _record_mapping(channel):
+    if channel["origin"] == "external":
+        return channel.get("external", {}).get("record") or channel.get("record")
+    return channel.get("record")
+
+
 def index_fields(mapping, record, ingested_at):
     """Return (id_key, lat, lon, time) extracted from one record."""
     if not mapping:
@@ -552,7 +558,7 @@ def index_fields(mapping, record, ingested_at):
 
 def extract_records(channel, body):
     """Turn a fetched/request body into the list of whole records to cache."""
-    mapping = channel.get("record")
+    mapping = _record_mapping(channel)
     if channel["origin"] == "external":
         records_path = (mapping or {}).get("records")
         if records_path:
@@ -584,7 +590,7 @@ def store_records(db, widget_id, channel_id, instance_token, channel, records, i
             "DELETE FROM records WHERE widget_id = ? AND channel_id = ? AND instance_token IS ?",
             (widget_id, channel_id, instance_token),
         )
-    mapping = channel.get("record")
+    mapping = _record_mapping(channel)
     for record in records:
         id_key, lat, lon, time_value = index_fields(mapping, record, ingested_at)
         db.execute(
@@ -1297,6 +1303,8 @@ def _effective_mapping(db, widget_id, channel):
         if row is None:
             raise HTTPException(status_code=404, detail="source channel not found")
         return json.loads(row["config"]).get("record", {})
+    if channel["origin"] == "external":
+        return channel.get("external", {}).get("record") or channel.get("record", {})
     return channel.get("record", {})
 
 
