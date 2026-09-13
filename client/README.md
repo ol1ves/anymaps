@@ -60,10 +60,51 @@ resolves with `{ config, state }`:
 - `config.channelRoutes` — channel ID → route prefix.
 - `state` — the persisted state object, `{}` on first run.
 
-### Room-token flow
+### Channels, the manifest, and the server
 
-Each widget instance joins a room it creates itself. On boot, read
-`state.iid`; if it is missing, create the room and persist the token:
+Your manifest is the widget author's own: it declares the server channels and
+defines how your bundle talks to the server. `config.channelRoutes` gives you
+one route prefix per channel, keyed by the channel `id` declared in the
+manifest. Build your requests on those routes.
+
+Channel kinds (from the manifest's direction × origin matrix):
+
+- `client` + `write` — your bundle POSTs records to the route.
+- `client` + `read` — your bundle GETs records others wrote; the manifest's
+  `source` field references the write channel, and the read serves that
+  channel's data through the same filter surface.
+- `external` + `read` — your bundle GETs the server's cache of an external
+  source. Public-read only (SPEC decision 20): no token, no client writes, and
+  reads never trigger a live fetch — they are cache-only (SPEC 10.2); only the
+  server's poller touches the external API.
+
+Each channel has a `visibility`, decided by you in the manifest:
+
+- `public` — one shared address. Use the route as-is: no token, no room.
+- `private` — instance-scoped. Create a room once with
+  `POST /widgets/{id}/instances`, persist the token into `state.iid`, and
+  append `/instances/{token}` to that channel's route only (CONTRACTS §3,
+  SPEC 9.2–9.4). Possession of the token is the whole access boundary; an
+  unknown token returns 404.
+
+A widget whose channels are all public never creates a room and never uses a
+token.
+
+Read filters (query params on GETs, per CONTRACTS §9 and SPEC 11.4–11.6):
+
+- `bounds=south,west,north,east` — geo box, needs a `lat`/`lon` mapping.
+- `ids=a,b` — comma-separated identity list, needs an `id` mapping.
+- `since` / `until` — unix seconds, needs a `time` mapping.
+- `latest=1` — most recent record per identity, needs `id` + `time`.
+
+Composition order: the server applies `latest` first, then `bounds`, `ids`,
+`since`, and `until`. Current positions in a viewport is one call:
+`?bounds=...&latest=1`.
+
+#### Private-channel pattern (room token)
+
+For a widget with a private channel, create the room on first boot and reuse
+the persisted token after that:
 
 ```js
 let iid = state.iid;
@@ -77,7 +118,7 @@ if (!iid) {
 ```
 
 The token is available on the next boot via `state.iid`. Append
-`/instances/{token}` to private channel routes before fetching.
+`/instances/{token}` to each private channel's route before fetching.
 
 ### Commands
 
@@ -143,7 +184,11 @@ fixes on a timer (for example, `requestAnimationFrame` or `setInterval`),
 calling `updateMarker` each frame. The server stores last-known positions
 only. Do not wait for the server to animate.
 
-### Complete example widget
+### Complete example widget — private channels
+
+Find-my-friends shape: `fmfW` is a private client write channel, `fmfR` is a
+private client read channel with `source: "fmfW"`. Room token appended to
+both routes.
 
 ```js
 // friends-nearby bundle — classic script, runtime prepended above
@@ -165,10 +210,10 @@ only. Do not wait for the server to animate.
 
   async function refetch(bounds) {
     const res = await fetch(
-      `${config.channelRoutes.fmfR}/instances/${iid}?bounds=${bounds}`);
-    const friends = await res.json();
-    for (const f of friends) {
-      anymaps.addMarker({ id: f.id, lat: f.lat, lng: f.lng,
+      `${config.channelRoutes.fmfR}/instances/${iid}?bounds=${bounds}&latest=1`);
+    const { records } = await res.json();
+    for (const f of records) {
+      anymaps.addMarker({ id: f.clientId, lat: f.lat, lng: f.lng,
                           icon: "🧑", color: "#0066ff" });
     }
   }
@@ -176,11 +221,35 @@ only. Do not wait for the server to animate.
     await fetch(`${config.channelRoutes.fmfW}/instances/${iid}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ lat, lng }),
+      body: JSON.stringify({ clientId: iid, lat, lng }),
     });
   }
 })();
 ```
 
-See `CONTRACTS.md` sections 2–6 for the wire format and `SPEC.md` section 7
-for the execution model.
+### Counterexample — public external-read channel
+
+A bathrooms-style widget with one `external` + `read` channel (`bathrooms`,
+public) needs no room and no token. It GETs the route with filters and draws
+markers from the returned cache records:
+
+```js
+// public-bathrooms bundle — classic script, runtime prepended above
+(async () => {
+  const { config } = await anymaps.ready();
+  anymaps.on("viewportChanged", ({ bounds }) => refetch(bounds));
+
+  async function refetch(bounds) {
+    const res = await fetch(
+      `${config.channelRoutes.bathrooms}?bounds=${bounds}`);
+    const { records } = await res.json();
+    for (const b of records) {
+      anymaps.addMarker({ id: b.id, lat: b.lat, lng: b.lng, icon: "🚻" });
+    }
+  }
+})();
+```
+
+See `CONTRACTS.md` sections 2–6 and 8–9 for the wire format, HTTP API, and
+filter parameters, and `SPEC.md` sections 7 (the SDK) and 8 (the manifest and
+channel model) for the execution model and channel rules.
