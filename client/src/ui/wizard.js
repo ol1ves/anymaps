@@ -123,11 +123,12 @@ export function register(ctx) {
   }
 
   function getManager() {
-    // main.js exposes the manager on window.__ANYMAPS_DEV__ after
-    // construction. Resolved lazily at action time so register() can run
-    // before the manager object exists.
+    // ctx.manager is set by createManager after all feature modules
+    // register. Resolved lazily at action time so register() can run
+    // before the manager object exists (it does: register runs inside
+    // createManager, before ctx.manager is assigned).
     try {
-      return window.__ANYMAPS_DEV__ && window.__ANYMAPS_DEV__.manager;
+      return ctx && ctx.manager;
     } catch (e) { return null; }
   }
 
@@ -203,6 +204,9 @@ export function register(ctx) {
     if (result.kind === "clarify") {
       transcript = result.transcript;
       bubble("assistant", response.questions[0]);
+      // Clear the answered prompt so the user's reply does not require
+      // manual clearing before the next turn.
+      input.value = "";
       setBusy(false);
       return;
     }

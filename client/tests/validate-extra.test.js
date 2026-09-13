@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addPolyline, updatePolyline, removePolyline,
-  openPopup, closePopup, setPopupContent, setPanel,
+  openPopup, closePopup, setPopupContent, setPanel, startGeolocation,
 } from "../src/validate.js";
 
 const validPairs = [
@@ -159,4 +159,26 @@ test("setPanel missing content", () => {
   assert.equal(setPanel({}), "panel missing content");
   assert.equal(setPanel({ title: "T" }), "panel missing content");
   assert.equal(setPanel({ content: 5 }), "panel missing content");
+});
+
+test("startGeolocation returns null for valid payloads", () => {
+  assert.equal(startGeolocation({}), null);
+  assert.equal(startGeolocation(undefined), null);
+  assert.equal(startGeolocation({ highAccuracy: true }), null);
+  assert.equal(startGeolocation({ highAccuracy: false }), null);
+});
+
+test("startGeolocation rejects non-boolean highAccuracy", () => {
+  assert.equal(
+    startGeolocation({ highAccuracy: "yes" }),
+    "startGeolocation highAccuracy must be a boolean",
+  );
+  assert.equal(
+    startGeolocation({ highAccuracy: 1 }),
+    "startGeolocation highAccuracy must be a boolean",
+  );
+  assert.equal(
+    startGeolocation({ highAccuracy: null }),
+    "startGeolocation highAccuracy must be a boolean",
+  );
 });

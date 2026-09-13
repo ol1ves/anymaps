@@ -125,3 +125,12 @@ export function setPanel(p) {
   if (!p || typeof p.content !== "string") return "panel missing content";
   return null;
 }
+
+// startGeolocation: optional highAccuracy (boolean).
+// "startGeolocation highAccuracy must be a boolean".
+export function startGeolocation(p) {
+  if (p != null && "highAccuracy" in p && typeof p.highAccuracy !== "boolean") {
+    return "startGeolocation highAccuracy must be a boolean";
+  }
+  return null;
+}
