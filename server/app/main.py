@@ -20,8 +20,11 @@ def _parse_origins(raw: str) -> list[str]:
 
 
 def allowed_origins() -> list[str]:
-    raw = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-    return _parse_origins(raw)
+    raw = os.environ.get("ALLOWED_ORIGINS", "*")
+    origins = _parse_origins(raw)
+    if "*" in origins:
+        return ["*"]
+    return origins
 
 
 def create_app(db_path: str | None = None) -> FastAPI:

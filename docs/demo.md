@@ -8,7 +8,7 @@ Section C's manifests and bundles match the current schema, server channel
 routes, SDK coordinate order, marker events, panels, and geolocation API.
 The agent validates both the schema and the shared cross-channel invariants.
 Its model request includes the schema and SDK guidance, and its CORS defaults
-allow the client at localhost:5173 and 127.0.0.1:5173.
+allow all origins (`ALLOWED_ORIGINS=*`).
 
 The client UI is implemented and covered by `client/tests` plus a production
 build: `client/src/install.js` provisions on enable and re-enables registry

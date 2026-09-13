@@ -21,7 +21,8 @@ npm run dev   # http://localhost:5173
   placeholders and get replaced by the WidgetManager.
 
 The client talks to the generic server at `http://localhost:8000` and the
-Agent Service at `http://localhost:8001`. CORS must allow `http://localhost:5173`.
+Agent Service at `http://localhost:8001`. Both services allow all origins by
+default (`ALLOWED_ORIGINS=*`).
 
 ## Tests
 
