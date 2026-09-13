@@ -13,7 +13,8 @@ npm run dev   # http://localhost:5173
 
 ## Environment
 
-Set the base server URL with the `VITE_SERVER_URL` environment variable.
+Set the base server URL and the Agent Service URL with the
+`VITE_SERVER_URL` and `VITE_AGENT_URL` environment variables.
 Copy `.env.example` to `.env` (or `.env.local`) and adjust it:
 
 ```sh
@@ -22,15 +23,17 @@ cp .env.example .env
 
 ```dotenv
 VITE_SERVER_URL=http://localhost:8000
+VITE_AGENT_URL=http://localhost:8001
 ```
 
-Vite reads `.env` files at dev and build time. The default is
-`http://localhost:8000` when the variable is unset.
+Vite reads `.env` files at dev and build time. Defaults are
+`http://localhost:8000` and `http://localhost:8001` when the variables are
+unset.
 
-Runtime overrides win over the environment variable, in order:
+Runtime overrides win over the environment variables, in order:
 
-1. `window.__ANYMAPS_CONFIG__.baseUrl`
-2. `localStorage["anymaps.baseUrl"]`
+1. `window.__ANYMAPS_CONFIG__.baseUrl` / `.agentUrl`
+2. `localStorage["anymaps.baseUrl"]` / `["anymaps.agentUrl"]`
 
 ## Structure
 
@@ -42,8 +45,9 @@ Runtime overrides win over the environment variable, in order:
   placeholders and get replaced by the WidgetManager.
 
 The client talks to the generic server at the `VITE_SERVER_URL` base URL
-(default `http://localhost:8000`) and the Agent Service at
-`http://localhost:8001`. CORS must allow `http://localhost:5173`.
+(default `http://localhost:8000`) and the Agent Service at the
+`VITE_AGENT_URL` base URL (default `http://localhost:8001`). CORS must allow
+`http://localhost:5173`.
 
 ## Tests
 

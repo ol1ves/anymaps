@@ -31,7 +31,7 @@ function readEnvVar(name) {
 }
 
 const DEFAULT_BASE_URL = readEnvVar("VITE_SERVER_URL") || "http://localhost:8000";
-const DEFAULT_AGENT_URL = "http://localhost:8001";
+const DEFAULT_AGENT_URL = readEnvVar("VITE_AGENT_URL") || "http://localhost:8001";
 const REGISTRY_KEY = "anymaps.registry";
 
 // Resolve the generic widget server base URL. Precedence: __ANYMAPS_CONFIG__
@@ -45,7 +45,8 @@ export function serverUrl(win, storage) {
   return DEFAULT_BASE_URL;
 }
 
-// Resolve the Agent Service base URL. Same precedence as serverUrl.
+// Resolve the Agent Service base URL. Precedence: __ANYMAPS_CONFIG__ wins,
+// then localStorage, then VITE_AGENT_URL (env), then the default.
 export function agentUrl(win, storage) {
   const cfg = win && win.__ANYMAPS_CONFIG__;
   if (cfg && typeof cfg.agentUrl === "string" && cfg.agentUrl) return cfg.agentUrl;
