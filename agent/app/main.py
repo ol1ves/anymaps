@@ -473,6 +473,85 @@ async def call_deepseek(messages: list[Message], api_key: str) -> dict[str, Any]
     raise HTTPException(status_code=500, detail=last_parse_error)
 
 
+def _missing_secret_requests(
+    plan: PlanPayload, bindings: dict[str, SecretBinding]
+) -> list[dict[str, Any]]:
+    missing: list[dict[str, Any]] = []
+    for source in plan.sources:
+        if source.auth is not None and source.id not in bindings:
+            missing.append(
+                {
+                    "id": source.id,
+                    "source": _dump_model(
+                        SourceSpec(
+                            method=source.method,
+                            url=source.url,
+                            query=source.query,
+                            headers=source.headers,
+                            body=source.body,
+                        )
+                    ),
+                    "auth": _dump_model(source.auth),
+                }
+            )
+    return missing
+
+
+async def _process_plan(
+    request: WizardRequest, plan: PlanPayload, api_key: str
+) -> dict[str, Any]:
+    bindings = {binding.id: binding for binding in request.secrets}
+    missing = _missing_secret_requests(plan, bindings)
+    if missing:
+        return {
+            "done": False,
+            "questions": [plan.proposal],
+            "secretRequests": missing,
+        }
+
+    notes = [
+        "The plan is approved. Here is the verified source information.",
+        "Return done:true with the final manifest and bundle now.",
+        "Write each external source exactly as planned. For authenticated "
+        "sources, set external.auth.secret to the secretId below (verbatim); "
+        "never invent a secretId.",
+    ]
+    for source in plan.sources:
+        if source.auth is not None:
+            binding = bindings[source.id]
+            notes.append(
+                f"Source '{source.id}': auth {source.auth.type} name={source.auth.name}; "
+                f"secretId={binding.secretId}."
+            )
+            if binding.shape is not None:
+                notes.append(f"Source '{source.id}' shape: {json.dumps(binding.shape)}")
+        else:
+            spec = SourceSpec(
+                method=source.method,
+                url=source.url,
+                query=source.query,
+                headers=source.headers,
+                body=source.body,
+            )
+            try:
+                shape = await test_source(spec)
+            except SourceBlockedError as exc:
+                raise HTTPException(
+                    status_code=400, detail="source blocked by SSRF rules"
+                ) from exc
+            except SourceTestError as exc:
+                raise HTTPException(
+                    status_code=500, detail=f"source test failed: {exc}"
+                ) from exc
+            notes.append(f"Source '{source.id}' shape: {json.dumps(shape)}")
+
+    content = "\n".join(notes)
+    if len(content) > MAX_CONTENT_CHARS:
+        content = content[:MAX_CONTENT_CHARS - 1]
+    final_messages = list(request.messages) + [Message(role="user", content=content)]
+    return await call_deepseek(final_messages, api_key)
+
+
 @app.post("/wizard/generate")
 async def generate_wizard(request: WizardRequest) -> dict[str, Any]:
     """Process one stateless wizard turn and return the contract response."""
@@ -486,6 +565,8 @@ async def generate_wizard(request: WizardRequest) -> dict[str, Any]:
     if not api_key:
         raise HTTPException(status_code=500, detail=MISSING_KEY_MESSAGE)
     result = await call_deepseek(request.messages, api_key)
+    if result["done"] is False and "plan" in result:
+        result = await _process_plan(request, result["plan"], api_key)
     if result["done"] is False:
         return result
 

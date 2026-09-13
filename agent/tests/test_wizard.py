@@ -476,3 +476,102 @@ def test_call_deepseek_surfaces_parse_error_after_repair(monkeypatch):
         asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
     assert "invalid JSON" in exc_info.value.detail
     assert len(calls) == 2
+
+
+def _plan_model():
+    return main.PlanResponse.model_validate(
+        {
+            "done": False,
+            "plan": {
+                "proposal": "Approve weather widget?",
+                "sources": [
+                    {
+                        "id": "noaa-token",
+                        "method": "GET",
+                        "url": "https://www.ncei.noaa.gov/cdo-web/api/v2/stations",
+                        "query": {},
+                        "headers": {},
+                        "auth": {"type": "header", "name": "token", "scheme": ""},
+                    }
+                ],
+            },
+        }
+    ).plan
+
+
+def test_plan_with_missing_secret_returns_secret_requests(monkeypatch):
+    async def fake_model(messages, api_key):
+        return {"done": False, "plan": _plan_model()}
+
+    async def fake_publish(manifest, bundle, *, server_url):
+        raise AssertionError("must not publish while a secret is missing")
+
+    monkeypatch.setenv("WIZARD_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(main, "call_deepseek", fake_model)
+    monkeypatch.setattr(main, "publish_widget", fake_publish)
+    response = client.post(
+        "/wizard/generate",
+        json={"messages": [{"role": "user", "content": "NOAA stations in NY"}]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["done"] is False
+    assert body["questions"] == ["Approve weather widget?"]
+    assert body["secretRequests"][0]["id"] == "noaa-token"
+    assert body["secretRequests"][0]["auth"] == {"type": "header", "name": "token", "scheme": ""}
+
+
+def test_plan_with_secret_finalizes_and_publishes(monkeypatch):
+    calls = []
+    manifest = {
+        "id": "ny-weather",
+        "name": "NY Weather",
+        "version": "1.0.0",
+        "description": "NY weather",
+        "server": {
+            "channels": [
+                {
+                    "id": "noaa",
+                    "origin": "external",
+                    "direction": "read",
+                    "visibility": "public",
+                    "external": {
+                        "method": "GET",
+                        "url": "https://www.ncei.noaa.gov/cdo-web/api/v2/stations",
+                        "auth": {"type": "header", "name": "token", "secret": "abc123"},
+                    },
+                }
+            ]
+        },
+    }
+
+    async def fake_model(messages, api_key):
+        calls.append(messages)
+        if len(calls) == 1:
+            return {"done": False, "plan": _plan_model()}
+        return {"done": True, "widgetId": "ny-weather", "version": "1.0.0",
+                "manifest": manifest, "bundle": "anymaps.ready().then(() => {});"}
+
+    async def fake_sources(manifest_arg):
+        return []
+
+    async def fake_publish(manifest_arg, bundle, *, server_url):
+        assert manifest_arg["server"]["channels"][0]["external"]["auth"]["secret"] == "abc123"
+        return {"id": "ny-weather", "version": "1.0.0"}
+
+    monkeypatch.setenv("WIZARD_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(main, "call_deepseek", fake_model)
+    monkeypatch.setattr(main, "test_candidate_sources", fake_sources)
+    monkeypatch.setattr(main, "publish_widget", fake_publish)
+    response = client.post(
+        "/wizard/generate",
+        json={
+            "messages": [{"role": "user", "content": "NOAA stations in NY"}],
+            "secrets": [{"id": "noaa-token", "secretId": "abc123", "shape": {"ok": True}}],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["done"] is True
+    assert len(calls) == 2
+    final_note = calls[1][-1].content
+    assert "abc123" in final_note
