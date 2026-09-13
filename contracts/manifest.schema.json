@@ -51,6 +51,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["url"],
+      "if": { "required": ["body"] },
+      "then": {
+        "required": ["method"],
+        "properties": { "method": { "const": "POST" } }
+      },
       "properties": {
         "method": { "enum": ["GET", "POST"], "default": "GET" },
         "url": { "type": "string", "format": "uri" },
@@ -103,7 +108,11 @@
             "direction": { "const": "write" }
           },
           "required": ["origin", "direction"],
-          "not": { "anyOf": [{ "required": ["source"] }, { "required": ["external"] }] }
+          "not": { "anyOf": [
+            { "required": ["source"] },
+            { "required": ["external"] },
+            { "required": ["record"], "properties": { "record": { "required": ["records"] } } }
+          ] }
         },
         {
           "description": "client read: clients GET records; source references the write channel",
@@ -115,10 +124,11 @@
           "not": { "anyOf": [{ "required": ["record"] }, { "required": ["external"] }, { "required": ["mode"] }, { "required": ["retain"] }] }
         },
         {
-          "description": "external read: clients GET the poller's cache",
+          "description": "external read: clients GET the poller's cache; public-only",
           "properties": {
             "origin": { "const": "external" },
-            "direction": { "const": "read" }
+            "direction": { "const": "read" },
+            "visibility": { "const": "public" }
           },
           "required": ["origin", "direction", "external"],
           "not": { "anyOf": [{ "required": ["source"] }, { "required": ["mode"] }, { "required": ["retain"] }] }

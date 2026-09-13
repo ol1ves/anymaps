@@ -39,7 +39,7 @@ Server and agent, from the repo root:
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r server/requirements.txt -r agent/requirements.txt
+pip install -r server/requirements.txt -r agent/requirements.txt -r server/requirements-dev.txt
 uvicorn server.app.main:app --reload --port 8000
 uvicorn agent.app.main:app --reload --port 8001
 ```
