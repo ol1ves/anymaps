@@ -27,6 +27,7 @@ def test_flights_manifest_matches_adsb_worked_example():
         "external": {
             "method": "GET",
             "url": "https://api.adsb.lol/v2/point/40.71/-74.0/250",
+            "headers": {"User-Agent": "anymaps/0.1 (development)"},
             "interval": 5,
             "mode": "series",
             "retain": 3600,
