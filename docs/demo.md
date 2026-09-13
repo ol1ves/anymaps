@@ -16,10 +16,10 @@ entries on startup, `client/src/ui/gallery.js` browses and installs published
 widgets, and `client/src/ui/wizard.js` drives the Agent Service and
 auto-installs the generated widget. The three demo sections later in this
 document are acceptance criteria to confirm in a browser rehearsal, not claims
-verified without a browser. Friends room/name/leave controls are still manual:
-a second user joins by writing the room token into
-`anymaps.state.find-my-friends.iid` before enabling (see the second-browser
-steps below). The flights manifest sends a `User-Agent` header because
+verified without a browser. The Find My Friends room/name/leave controls are
+available in the widget panel, and the gallery exposes an Update button when
+a newer published widget version is available. The flights manifest sends a
+`User-Agent` header because
 ADSB.lol rejects the httpx default with 403; the bathrooms manifest already
 sets one.
 
@@ -87,7 +87,7 @@ For an isolated rerun with changed channels, start the server with
 Run this in the browser developer console to provision and enable all three:
 
 ```javascript
-async function enableDemo(id, version = '0.1.0') {
+async function enableDemo(id, version = '0.1.3') {
   const baseUrl = 'http://localhost:8000';
   async function checked(url, options) {
     const response = await fetch(url, options);
@@ -170,7 +170,7 @@ Remove-Item Env:RUN_LIVE_DEEPSEEK_TEST
 ## Demo 2 — publish and second-user install
 
 1. Publish `widgets/friends/manifest.json` and `widgets/friends/bundle.js` with
-   `POST /widgets`; expect `201` with `find-my-friends` and `0.1.0`.
+   `POST /widgets`; expect `201` with `find-my-friends` and `0.1.3`.
 2. In each browser, install the same published version. Provisioning must be
    idempotent and return the same `fmfW` and `fmfR` route prefixes.
 3. Browser 1 creates a room with `POST /widgets/find-my-friends/instances` and

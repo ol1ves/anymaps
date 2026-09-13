@@ -2,6 +2,7 @@
   const { config } = await anymaps.ready();
   const route = config.channelRoutes && config.channelRoutes.bathrooms;
   const markerIds = new Set();
+  const markerPositions = new Map();
   let requestNumber = 0;
 
   if (!route) {
@@ -50,6 +51,7 @@
           ? String(record.tags.name)
           : "Public bathroom";
         const marker = { id, lat, lng, icon: "🚻", title };
+        markerPositions.set(id, { lat, lng });
         nextMarkerIds.add(id);
 
         if (markerIds.has(id)) {
@@ -79,5 +81,16 @@
   }
 
   anymaps.on("viewportChanged", ({ bounds }) => loadBathrooms(bounds));
+  anymaps.on("markerClick", ({ markerId }) => {
+    if (typeof markerId !== "string") return;
+    const position = markerPositions.get(markerId);
+    if (!position) return;
+    anymaps.flyTo({ center: [position.lat, position.lng], zoom: 15 });
+    anymaps.openPopup({
+      id: `bathroom-popup:${markerId}`,
+      anchorMarkerId: markerId,
+      content: "<strong>Public bathroom</strong>"
+    });
+  });
   await loadBathrooms(null);
 })();

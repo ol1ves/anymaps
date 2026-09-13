@@ -216,7 +216,17 @@
   });
   anymaps.on("markerClick", ({ markerId }) => {
     if (typeof markerId !== "string" || !markerId.startsWith("aircraft:")) return;
-    selectAircraft(markerId.slice("aircraft:".length));
+    const hex = markerId.slice("aircraft:".length);
+    const item = aircraft.get(hex);
+    if (item) {
+      anymaps.flyTo({ center: [item.to.lat, item.to.lng], zoom: 13 });
+      anymaps.openPopup({
+        id: `aircraft-popup:${hex}`,
+        anchorMarkerId: markerId,
+        content: `<strong>${escapeHtml(markerTitle(item.record))}</strong>`
+      });
+    }
+    selectAircraft(hex);
   });
 
   updatePanel(null);
