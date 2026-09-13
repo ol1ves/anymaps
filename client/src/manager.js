@@ -6,7 +6,7 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import anymapsRuntime from "./sdk/anymaps.js?raw";
-import { provision, startupEnable } from "./install.js";
+import { provision, startupEnable, installWidget } from "./install.js";
 import { register as registerMarkers } from "./commands/markers.js";
 import { register as registerPolylines } from "./commands/polylines.js";
 import { register as registerPopups } from "./render/popups.js";
@@ -336,14 +336,24 @@ export function createManager() {
     return ctx.widgetName(widgetId);
   }
 
+  function install(id, version) {
+    return installWidget(manager, id, version);
+  }
+
   function startup() {
     return startupEnable(manager);
   }
 
   const manager = {
-    enable, disable, uninstall, list, widgetName, startup,
+    enable, disable, uninstall, list, install, widgetName, startup,
     // Test/dev access. Not part of the public API contract.
     get ctx() { return ctx; },
   };
+
+  // Controller-ratified deviation (Task 6): expose the manager on ctx so the
+  // gallery (registered with ctx only) can call install/list/disable/
+  // uninstall. One additive ctx field; no lifecycle change.
+  ctx.manager = manager;
+
   return manager;
 }
