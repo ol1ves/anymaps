@@ -56,7 +56,26 @@ test("handleWizardResponse done returns widgetId and version, transcript unchang
   assert.equal(out.kind, "done");
   assert.equal(out.widgetId, "water-fountains-nyc");
   assert.equal(out.version, "0.1.0");
+  assert.deepEqual(out.transcript, []);
   assert.deepEqual(transcript, [{ role: "user", content: "water fountains" }]);
+});
+
+test("handleWizardResponse done resets the transcript to empty", () => {
+  const transcript = [
+    { role: "user", content: "water fountains" },
+    { role: "assistant", content: "Approve publishing widget 'w' v1.0.0?" },
+    { role: "user", content: "yes" },
+  ];
+  const out = handleWizardResponse(transcript, {
+    done: true,
+    widgetId: "w",
+    version: "1.0.0",
+    manifest: { id: "w", version: "1.0.0" },
+  });
+  assert.equal(out.kind, "done");
+  assert.equal(out.widgetId, "w");
+  assert.equal(out.version, "1.0.0");
+  assert.deepEqual(out.transcript, []);
 });
 
 test("handleWizardResponse error when done is missing", () => {

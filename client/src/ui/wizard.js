@@ -47,7 +47,7 @@ export function handleWizardResponse(transcript, response) {
     return { kind: "error", message: "invalid wizard response" };
   }
   if (response.done === true) {
-    return { kind: "done", widgetId: response.widgetId, version: response.version };
+    return { kind: "done", widgetId: response.widgetId, version: response.version, transcript: [] };
   }
   if (response.done === false) {
     const questions = Array.isArray(response.questions) ? response.questions : [];
@@ -216,6 +216,11 @@ export function register(ctx) {
     // done: install through the generic server via manager.install. The
     // Agent Service already published the manifest + bundle there.
     const { widgetId, version } = result;
+    // The Agent Service already published this widget. Reset the transcript
+    // now so a retry after this point starts a fresh widget instead of
+    // re-publishing the same id/version (which the server rejects with 409).
+    transcript = result.transcript;
+    input.value = "";
     bubble("assistant", "Widget generated. Installing…");
     const manager = getManager();
     if (!manager || typeof manager.install !== "function") {
@@ -226,13 +231,11 @@ export function register(ctx) {
     try {
       await manager.install(widgetId, version);
       bubble("assistant", "Installed: " + widgetId);
-      // Reset the transcript only after a successful install.
-      transcript = [];
-      input.value = "";
     } catch (err) {
       const msg = (err && err.message) ? err.message : "install failed";
       bubble("assistant", msg, { error: true });
-      // Keep the done state visible with the error; do not reset transcript.
+      // The widget is published and registered even on install failure; the
+      // gallery is the recovery path, and the transcript is already reset.
     }
     setBusy(false);
   }
