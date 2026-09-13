@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from typing import Any, Literal
 
 import httpx
@@ -203,6 +204,12 @@ async def verify_and_store_secret(request: WizardSecretRequest) -> dict[str, Any
 
 def _transcript_size(messages: list[Message]) -> int:
     return sum(len(message.content) for message in messages)
+
+
+def _log_wizard(message: str) -> None:
+    """Emit a timing trace line for one wizard turn (docker-compose logs)."""
+
+    print(f"[wizard] {message}", flush=True)
 
 
 def _secret_bindings_note(request: WizardRequest) -> str:
@@ -515,6 +522,7 @@ async def _process_plan(
                 headers=source.headers,
                 body=source.body,
             )
+            t_source = time.perf_counter()
             try:
                 shape = await test_source(spec)
             except SourceBlockedError as exc:
@@ -525,6 +533,10 @@ async def _process_plan(
                 raise HTTPException(
                     status_code=500, detail=f"source test failed: {exc}"
                 ) from exc
+            _log_wizard(
+                f"plan source test '{source.id}' {source.url} "
+                f"took {time.perf_counter() - t_source:.1f}s"
+            )
             notes.append(f"Source '{source.id}' shape: {json.dumps(shape)}")
 
     content = "\n".join(notes)
@@ -546,6 +558,7 @@ async def generate_wizard(request: WizardRequest) -> dict[str, Any]:
     api_key = os.getenv("WIZARD_LLM_API_KEY", "").strip()
     if not api_key:
         raise HTTPException(status_code=500, detail=MISSING_KEY_MESSAGE)
+    t0 = time.perf_counter()
     # On a follow-up turn the client sends the verified secret bindings. Feed
     # them to the model so it can write the right secretId even when it goes
     # straight to done:true (which skips the plan re-prompt in _process_plan).
@@ -553,11 +566,20 @@ async def generate_wizard(request: WizardRequest) -> dict[str, Any]:
     if request.secrets:
         messages.append(Message(role="user", content=_secret_bindings_note(request)))
     result = await call_deepseek(messages, api_key)
+    _log_wizard(
+        f"call_deepseek #1 took {time.perf_counter() - t0:.1f}s "
+        f"(done={result.get('done')}, plan={'plan' in result})"
+    )
     if result["done"] is False and "plan" in result:
         result = await _process_plan(request, result["plan"], api_key)
+        _log_wizard(
+            f"_process_plan took {time.perf_counter() - t0:.1f}s "
+            f"(done={result.get('done')})"
+        )
     if result["done"] is False:
         return result
 
+    t_sources = time.perf_counter()
     try:
         await test_candidate_sources(result["manifest"])
     except SourceBlockedError as exc:
@@ -566,7 +588,9 @@ async def generate_wizard(request: WizardRequest) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"source test failed: {exc}") from exc
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    _log_wizard(f"test_candidate_sources took {time.perf_counter() - t_sources:.1f}s")
 
+    t_publish = time.perf_counter()
     try:
         await publish_widget(
             result["manifest"],
@@ -575,6 +599,8 @@ async def generate_wizard(request: WizardRequest) -> dict[str, Any]:
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    _log_wizard(f"publish_widget took {time.perf_counter() - t_publish:.1f}s")
+    _log_wizard(f"TURN TOTAL {time.perf_counter() - t0:.1f}s")
 
     return {
         "done": True,
