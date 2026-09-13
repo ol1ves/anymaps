@@ -46,8 +46,8 @@ Runtime overrides win over the environment variables, in order:
 
 The client talks to the generic server at the `VITE_SERVER_URL` base URL
 (default `http://localhost:8000`) and the Agent Service at the
-`VITE_AGENT_URL` base URL (default `http://localhost:8001`). CORS must allow
-`http://localhost:5173`.
+`VITE_AGENT_URL` base URL (default `http://localhost:8001`). Both services
+allow all origins by default (`ALLOWED_ORIGINS=*`).
 
 ## Tests
 
