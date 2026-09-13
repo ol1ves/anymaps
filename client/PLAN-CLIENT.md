@@ -8,6 +8,12 @@
 **Goal:** Build the full Map Client and `anymaps` SDK per CONTRACTS.md
 sections 2–13 and 15, so the three demo widgets and the wizard run against it.
 
+**Reading rule (bind every task):** each task's "Spec/contract requirements"
+list names exact CONTRACTS.md and SPEC.md sections. Workers and reviewers
+read those sections from the repo checkout before starting — the files are
+the authority, the brief only points at them. The repo checkout always
+contains CONTRACTS.md and SPEC.md at the root.
+
 **Architecture:** Vite + vanilla JS, no TypeScript, no new npm dependencies.
 One Web Worker per enabled widget runs the widget bundle with the `anymaps`
 runtime prepended. The WidgetManager (main thread) owns the MapLibre map, all
