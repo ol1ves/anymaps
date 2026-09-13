@@ -122,4 +122,4 @@ the plan's `auth`. Secrets are never returned in chat.
 - done:false → {"done": false, "questions": ["one question"]}
 - done:true  → {"done": true, "widgetId", "version", "manifest", "bundle"}
 - done:true must satisfy the manifest schema and the classic-script bundle rules
-  from the generation contract.
+  from the authoritative sources (the SDK source, CONTRACTS.md, SPEC.md).
