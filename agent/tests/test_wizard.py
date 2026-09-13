@@ -720,3 +720,14 @@ def test_deepseek_body_uses_authoritative_prompt_and_omits_old_contract():
     assert "globalThis.anymaps" in system
     assert "api.adsb.lol" in system
     assert "SDK methods: addMarker" not in system
+
+
+def test_generation_budget_fits_client_turn_deadline():
+    body = main._build_deepseek_body([])
+    assert body["max_tokens"] == main.MAX_OUTPUT_TOKENS
+    # The client aborts a turn at 60s (TURN_BUDGET_MS in client/src/ui/wizard.js).
+    # The server's DeepSeek deadline must sit strictly inside that budget so a
+    # slow turn returns a clean 500 instead of the client aborting first.
+    assert main.REQUEST_TIMEOUT_SECONDS < 60.0
+    # The completion budget is capped so a full generation fits the deadline.
+    assert main.MAX_OUTPUT_TOKENS <= 12_000

@@ -44,11 +44,13 @@ MAX_MESSAGES = 24
 MAX_CONTENT_CHARS = 12_000
 MAX_TRANSCRIPT_CHARS = 48_000
 # deepseek-v4-flash is a reasoning model: chain-of-thought tokens share the
-# max_tokens budget with the answer. A full widget-generation turn measured
-# ~14k completion tokens (~12k of them reasoning), so the old 8k cap ended
-# with finish_reason=length and an empty content string ("invalid JSON").
-REQUEST_TIMEOUT_SECONDS = 180.0
-MAX_OUTPUT_TOKENS = 32_000
+# max_tokens budget with the answer. Cap the completion budget so a full
+# widget-generation turn finishes before the client's 60s abort (see
+# TURN_BUDGET_MS in client/src/ui/wizard.js). The server deadline sits just
+# under the client's, so a slow turn returns a clean 500 instead of the client
+# aborting first.
+REQUEST_TIMEOUT_SECONDS = 55.0
+MAX_OUTPUT_TOKENS = 12_000
 
 # Transient DeepSeek failures (connection resets during long generations,
 # rate limits, and 5xx) get one retry before the wizard turn fails.
