@@ -8,3 +8,6 @@ __pycache__/
 data/
 *.db
 .DS_Store
+
+.sdd/
+.playwright-mcp/
