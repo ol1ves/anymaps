@@ -91,18 +91,18 @@ as {type: 'header'|'query', name, secret: secretId, scheme?: prefix}.
 Do not invent a secretId; ask the user to verify it outside the chat first.
 SDK methods: addMarker/updateMarker({id,lat,lng,icon?,label?,title?,rotation?});
 removeMarker(id); addPolyline({id,points:[[lat,lng],...],color?,width?});
-updatePolyline({id,points? ,append?,color?,width?}); removePolyline(id);
+updatePolyline({id,points?|append?,color?,width?}); removePolyline(id);
 setPanel({title?,content: html}); clearPanel(); setStyles(cssText);
 openPopup({id,content,lat?,lng?,anchorMarkerId?}); closePopup(id);
 setPopupContent({id,content}); persist(partialState);
 startGeolocation({highAccuracy?}); stopGeolocation();
-requestCameraControl(); releaseCameraControl(); flyTo/jumpTo({center:[lat,lng],zoom?});
+requestCameraControl(); releaseCameraControl(); flyTo/jumpTo({center:[lat,lng],zoom?,bearing?});
 fitBounds({bounds:[[south,west],[north,east]]}). Request camera control and wait
 for cameraGranted before moving the map.
 anymaps.on(name, handler) subscribes: viewportChanged({bounds,center,zoom}),
-markerClick({markerId,lat,lng}), geolocation({lat,lng,accuracy}),
-geolocationError({code,message}), cameraGranted, cameraRevoked,
-error({error}). Coordinates are [lat,lng]; times are unix seconds.
+markerClick({markerId}), mapClick({lat,lng}), geolocation({lat,lng,accuracy}),
+geolocationError({code,message}), cameraGranted, cameraRevoked({reason}),
+error({id,error}). Coordinates are [lat,lng]; times are unix seconds.
 No DOM, window, navigator, localStorage, imports, or raw postMessage in bundles.
 Panels contain HTML but have no form-input SDK event; use persisted state for
 settings. Escape external strings before including them in HTML.
@@ -237,6 +237,24 @@ async def verify_and_store_secret(request: WizardSecretRequest) -> dict[str, Any
 
 def _transcript_size(messages: list[Message]) -> int:
     return sum(len(message.content) for message in messages)
+
+
+def _secret_bindings_note(request: WizardRequest) -> str:
+    """A synthetic note describing verified secrets, never the raw values."""
+
+    lines = [
+        "Verified API secrets for this widget. Use the secretId verbatim as "
+        "external.auth.secret in the manifest; never invent a secretId."
+    ]
+    for binding in request.secrets:
+        extra = ""
+        if binding.shape is not None:
+            extra = f" source shape: {json.dumps(binding.shape)}"
+        lines.append(f"- {binding.id}: secretId={binding.secretId}{extra}")
+    note = "\n".join(lines)
+    if len(note) > MAX_CONTENT_CHARS:
+        note = note[: MAX_CONTENT_CHARS - 1]
+    return note
 
 
 def _dump_model(model: BaseModel) -> dict[str, Any]:
@@ -564,7 +582,13 @@ async def generate_wizard(request: WizardRequest) -> dict[str, Any]:
     api_key = os.getenv("WIZARD_LLM_API_KEY", "").strip()
     if not api_key:
         raise HTTPException(status_code=500, detail=MISSING_KEY_MESSAGE)
-    result = await call_deepseek(request.messages, api_key)
+    # On a follow-up turn the client sends the verified secret bindings. Feed
+    # them to the model so it can write the right secretId even when it goes
+    # straight to done:true (which skips the plan re-prompt in _process_plan).
+    messages = list(request.messages)
+    if request.secrets:
+        messages.append(Message(role="user", content=_secret_bindings_note(request)))
+    result = await call_deepseek(messages, api_key)
     if result["done"] is False and "plan" in result:
         result = await _process_plan(request, result["plan"], api_key)
     if result["done"] is False:

@@ -110,6 +110,7 @@ export function register(ctx) {
 
   let transcript = [];
   let busy = false;
+  let pendingSecrets = [];
 
   // Build the panel markup. Built-in UI, not a widget.
   root.innerHTML = "";
@@ -254,6 +255,7 @@ export function register(ctx) {
     // now so a retry after this point starts a fresh widget instead of
     // re-publishing the same id/version (which the server rejects with 409).
     transcript = result.transcript;
+    pendingSecrets = [];
     input.value = "";
     bubble("assistant", "Widget generated. Installing…");
     const manager = getManager();
@@ -282,7 +284,7 @@ export function register(ctx) {
     // Push the user message and render it.
     transcript = appendTurn(transcript, { role: "user", content: text });
     bubble("user", text);
-    sendTurn(transcript, []);
+    sendTurn(transcript, pendingSecrets);
   }
 
   function collectSecrets(secretRequests) {
@@ -292,13 +294,17 @@ export function register(ctx) {
     for (const request of secretRequests) {
       const field = document.createElement("input");
       field.type = "password";
-      field.placeholder = "Enter key for " + request.id;
+      field.className = "anymaps-wizard-secret-input";
+      field.autocomplete = "off";
+      const authName = request.auth && request.auth.name ? request.auth.name : request.id;
+      field.placeholder = "Enter " + authName + " for " + request.id;
       field.dataset.secretId = request.id;
       field.addEventListener("input", () => { values[request.id] = field.value; });
       host.appendChild(field);
     }
     const button = document.createElement("button");
     button.type = "button";
+    button.className = "anymaps-wizard-secret-submit";
     button.textContent = "Verify & continue";
     host.appendChild(button);
     log.appendChild(host);
@@ -306,6 +312,7 @@ export function register(ctx) {
       setBusy(true);
       try {
         const secrets = await verifySecrets(secretRequests, values, agentUrl());
+        pendingSecrets = secrets;
         transcript = appendTurn(transcript, { role: "user", content: "I've provided the key(s). Proceed." });
         bubble("user", "I've provided the key(s). Proceed.");
         host.remove();

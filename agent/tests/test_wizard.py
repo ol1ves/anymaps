@@ -31,6 +31,11 @@ def test_model_receives_schema_and_sdk_contract(monkeypatch):
         assert '"$schema"' in prompt
         assert "cameraGranted" in prompt
         assert "center:[lat,lng]" in prompt
+        # SDK contract must match the real SDK payloads (SPEC.md section 7).
+        assert "markerClick({markerId})" in prompt
+        assert "mapClick({lat,lng})" in prompt
+        assert "bearing?" in prompt
+        assert "error({id,error})" in prompt
         return httpx.Response(200, json={"choices": [{"message": {"content": '{"done":false,"questions":["Which source?"]}'}}]})
     monkeypatch.setattr(main.httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
     result = asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
@@ -575,6 +580,75 @@ def test_plan_with_secret_finalizes_and_publishes(monkeypatch):
     assert len(calls) == 2
     final_note = calls[1][-1].content
     assert "abc123" in final_note
+
+
+def test_followup_turn_secret_reaches_model_before_build(monkeypatch):
+    """The real two-turn flow: turn 1 returns secretRequests, turn 2 sends
+    the verified bindings and the model emits done:true directly. The
+    secretId must still reach the model so it can write external.auth.secret.
+    """
+
+    calls = []
+    manifest = {
+        "id": "ny-weather",
+        "name": "NY Weather",
+        "version": "1.0.0",
+        "description": "NY weather",
+        "server": {
+            "channels": [
+                {
+                    "id": "noaa",
+                    "origin": "external",
+                    "direction": "read",
+                    "visibility": "public",
+                    "external": {
+                        "method": "GET",
+                        "url": "https://www.ncei.noaa.gov/cdo-web/api/v2/stations",
+                        "auth": {"type": "header", "name": "token", "secret": "abc123"},
+                    },
+                }
+            ]
+        },
+    }
+
+    async def fake_model(messages, api_key):
+        calls.append(messages)
+        return {
+            "done": True,
+            "widgetId": "ny-weather",
+            "version": "1.0.0",
+            "manifest": manifest,
+            "bundle": "anymaps.ready().then(() => {});",
+        }
+
+    async def fake_sources(manifest_arg):
+        return []
+
+    async def fake_publish(manifest_arg, bundle, *, server_url):
+        return {"id": "ny-weather", "version": "1.0.0"}
+
+    monkeypatch.setenv("WIZARD_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(main, "call_deepseek", fake_model)
+    monkeypatch.setattr(main, "test_candidate_sources", fake_sources)
+    monkeypatch.setattr(main, "publish_widget", fake_publish)
+
+    response = client.post(
+        "/wizard/generate",
+        json={
+            "messages": [
+                {"role": "user", "content": "NOAA stations in NY"},
+                {"role": "assistant", "content": "Approve publishing weather widget?"},
+                {"role": "user", "content": "I've provided the key(s). Proceed."},
+            ],
+            "secrets": [
+                {"id": "noaa-token", "secretId": "abc123", "shape": {"ok": True}}
+            ],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["done"] is True
+    # The model must have been told the verified secretId before building.
+    assert any("abc123" in message.content for message in calls[0])
 
 
 def test_raw_key_never_reaches_llm_or_manifest(monkeypatch):
