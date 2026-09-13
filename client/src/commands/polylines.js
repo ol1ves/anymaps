@@ -25,8 +25,10 @@ function storeFor(widgetId) {
   return m;
 }
 
-function layerIdFor(id) { return "anymaps-polyline-" + id; }
-function sourceIdFor(id) { return "anymaps-polyline-src-" + id; }
+// Ids include widgetId so two widgets can each add a polyline with the same
+// id (SPEC.md section 7.6: drawn IDs are scoped per widget).
+function layerIdFor(widgetId, id) { return "anymaps-polyline-" + widgetId + "-" + id; }
+function sourceIdFor(widgetId, id) { return "anymaps-polyline-src-" + widgetId + "-" + id; }
 
 // [[lat,lng],...] -> GeoJSON LineString coordinates [[lng,lat],...].
 function toGeoJSON(points) {
@@ -37,8 +39,8 @@ function toGeoJSON(points) {
 }
 
 function addLayer(ctx, widgetId, id, data, color, width) {
-  const sourceId = sourceIdFor(id);
-  const lid = layerIdFor(id);
+  const sourceId = sourceIdFor(widgetId, id);
+  const lid = layerIdFor(widgetId, id);
   ctx.map.addSource(sourceId, { type: "geojson", data });
   ctx.map.addLayer({
     id: lid,
@@ -71,8 +73,8 @@ export function register(ctx) {
     addLayer(ctx, widgetId, payload.id, data, color, width);
 
     const rec = {
-      sourceId: sourceIdFor(payload.id),
-      layerId: layerIdFor(payload.id),
+      sourceId: sourceIdFor(widgetId, payload.id),
+      layerId: layerIdFor(widgetId, payload.id),
       points: payload.points.map((p) => [...p]),
       color,
       width,

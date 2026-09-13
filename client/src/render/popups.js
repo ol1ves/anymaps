@@ -28,19 +28,26 @@ export function register(ctx) {
     const err = validateOpen(payload);
     if (err) throw new Error(err);
 
-    // One popup globally: close the previous (any widget).
+    // Resolve the anchor BEFORE closing the current popup so a failed
+    // openPopup (missing anchor) does not destroy another widget's popup.
+    let anchored = false;
+    let anchorMarker = null;
+    if (payload.anchorMarkerId != null) {
+      anchorMarker = getMarker(widgetId, payload.anchorMarkerId);
+      if (!anchorMarker) throw new Error("popup anchor marker not found");
+      anchored = true;
+    }
+
+    // One popup globally: close the previous (any widget) only once the
+    // new popup is certain to open.
     closeCurrent();
 
     const popup = new maplibregl.Popup({ className: "anymaps-popup" })
       .setHTML(payload.content);
 
-    let anchored = false;
-    if (payload.anchorMarkerId != null) {
-      const marker = getMarker(widgetId, payload.anchorMarkerId);
-      if (!marker) throw new Error("popup anchor marker not found");
-      marker.setPopup(popup);
-      marker.togglePopup(); // opens (popup starts closed)
-      anchored = true;
+    if (anchored) {
+      anchorMarker.setPopup(popup);
+      anchorMarker.togglePopup(); // opens (popup starts closed)
     } else {
       popup.setLngLat([payload.lng, payload.lat]).addTo(ctx.map);
     }
