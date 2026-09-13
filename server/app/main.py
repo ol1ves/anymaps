@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import channels, db as db_module, instances, provision, registry, secrets as secrets_module
 from .poller import Poller
+from shared.proxy import create_prefix_strip_middleware
 
 logger = logging.getLogger("anymaps.server")
 
@@ -47,6 +48,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.middleware("http")(create_prefix_strip_middleware())
 
     app.include_router(registry.router)
     app.include_router(provision.router)
