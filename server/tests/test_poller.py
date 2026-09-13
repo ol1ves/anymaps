@@ -67,6 +67,58 @@ def test_request_applies_header_auth(tmp_path):
     db.close()
 
 
+def test_request_resolves_relative_redirect(tmp_path):
+    db = connect(str(tmp_path / "t.db"))
+    poller = Poller(db)
+    urls = []
+
+    def handler(request):
+        urls.append(str(request.url))
+        if len(urls) == 1:
+            return httpx.Response(302, headers={"location": "/data.json"})
+        return httpx.Response(200, json={"ok": 1})
+
+    async def run():
+        poller.client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=False)
+        result = await poller._request({"url": "https://example.com/x"})
+        await poller.client.aclose()
+        return result
+
+    result = asyncio.run(run())
+    assert result == {"ok": 1}
+    assert urls[1] == "https://example.com/data.json"
+    db.close()
+
+
+def test_request_strips_auth_on_cross_origin_redirect(tmp_path):
+    db = connect(str(tmp_path / "t.db"))
+    db.execute("INSERT INTO secrets (secret_id, value, created_at) VALUES ('k', 'tok', 1.0)")
+    db.commit()
+    poller = Poller(db)
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers.get("Authorization"))
+        if len(seen) == 1:
+            return httpx.Response(302, headers={"location": "https://www.example.com/x"})
+        return httpx.Response(200, json={})
+
+    async def run():
+        poller.client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=False)
+        ext = {
+            "method": "GET",
+            "url": "https://example.com/x",
+            "auth": {"type": "header", "name": "Authorization", "scheme": "Bearer ", "secret": "k"},
+        }
+        await poller._request(ext)
+        await poller.client.aclose()
+
+    asyncio.run(run())
+    assert seen[0] == "Bearer tok"
+    assert seen[1] is None
+    db.close()
+
+
 def test_run_swallows_fetch_errors(tmp_path):
     db = connect(str(tmp_path / "t.db"))
     poller = Poller(db)

@@ -1499,6 +1499,7 @@ Expected: FAIL (Poller has no `_fetch_once`, `_request`, `_run`)
 
 import asyncio
 import json
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -1550,6 +1551,7 @@ class Poller:
         headers = dict(ext.get("headers") or {})
         body = ext.get("body")
 
+        auth_injected = None
         auth = ext.get("auth")
         if auth:
             row = self.db.execute(
@@ -1562,8 +1564,10 @@ class Poller:
                 value = auth["scheme"] + value
             if auth["type"] == "header":
                 headers[auth["name"]] = value
+                auth_injected = ("header", auth["name"])
             else:
                 params[auth["name"]] = value
+                auth_injected = ("query", auth["name"])
 
         for _ in range(5):
             assert_source_url_allowed(url)
@@ -1580,7 +1584,11 @@ class Poller:
                 if response.status_code == 303:
                     method = "GET"
                     body = None
-                url = location
+                new_url = urljoin(url, location)
+                if auth_injected and urlparse(new_url).hostname != urlparse(url).hostname:
+                    kind, name = auth_injected
+                    (headers if kind == "header" else params).pop(name, None)
+                url = new_url
                 continue
             response.raise_for_status()
             return response.json()
