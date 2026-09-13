@@ -2,12 +2,15 @@
 
 import asyncio
 import json
+import logging
 from urllib.parse import urljoin, urlparse
 
 import httpx
 
 from shared.ssrf import assert_source_url_allowed
 from . import records
+
+logger = logging.getLogger("anymaps.server")
 
 
 class Poller:
@@ -35,7 +38,9 @@ class Poller:
             try:
                 await self._fetch_once(widget_id, channel)
             except Exception:
-                pass  # keep last-good cache, retry next interval
+                logger.warning(
+                    "poller fetch failed for %s/%s", widget_id, channel["id"], exc_info=True
+                )  # keep last-good cache, retry next interval
             await asyncio.sleep(interval)
 
     async def _fetch_once(self, widget_id, channel):

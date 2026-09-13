@@ -150,6 +150,37 @@ def test_run_swallows_fetch_errors(tmp_path):
     db.close()
 
 
+def test_run_logs_fetch_errors(tmp_path, caplog):
+    import logging
+
+    db = connect(str(tmp_path / "t.db"))
+    poller = Poller(db)
+    channel = {
+        "id": "c",
+        "origin": "external",
+        "direction": "read",
+        "visibility": "public",
+        "external": {"url": "https://example.com/x", "interval": 5},
+    }
+
+    async def boom(widget_id, channel):
+        raise ValueError("upstream down")
+
+    poller._fetch_once = boom
+
+    async def run_once():
+        task = asyncio.create_task(poller._run("w", channel))
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    with caplog.at_level(logging.WARNING, logger="anymaps.server"):
+        asyncio.run(run_once())
+    assert any("poller fetch failed for w/c" in rec.message for rec in caplog.records)
+    db.close()
+
+
 def test_start_all_resumes_external_channels_on_startup(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
