@@ -13,12 +13,37 @@ const map = new maplibregl.Map({
   zoom: 12,
   pitch: 0,
   bearing: 0,
+  attributionControl: false, // replaced by the compact control below
 });
 
-// Native controls. Attribution stays on the default control (bottom-right),
-// which reads the tile source's required attribution.
+// Native controls. Navigation top-right, metric scale bottom-left.
 map.addControl(new maplibregl.NavigationControl(), "top-right");
 map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+
+// Compact attribution: a small ⓘ that expands to the required license links.
+// Tile data requires OpenStreetMap attribution; the MapLibre logo is optional.
+class CompactAttribution {
+  onAdd() {
+    const details = document.createElement("details");
+    details.className = "maplibregl-ctrl anymaps-attrib";
+    const summary = document.createElement("summary");
+    summary.textContent = "ⓘ";
+    summary.setAttribute("aria-label", "Attribution and licenses");
+    const inner = document.createElement("div");
+    inner.className = "anymaps-attrib-inner";
+    inner.innerHTML =
+      '© <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ' +
+      '© <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> ' +
+      'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+    details.append(summary, inner);
+    this._container = details;
+    return details;
+  }
+  onRemove() {
+    this._container.remove();
+  }
+}
+map.addControl(new CompactAttribution(), "bottom-right");
 
 map.on("load", () => {
   // Smoke-test marker so the GL render pipeline is confirmed at a glance.
