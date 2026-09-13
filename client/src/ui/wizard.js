@@ -117,9 +117,20 @@ export function register(ctx) {
   const host = document.createElement("div");
   host.className = "anymaps-wizard";
 
+  const header = document.createElement("div");
+  header.className = "anymaps-wizard-header";
+
   const heading = document.createElement("h2");
   heading.className = "anymaps-wizard-heading";
   heading.textContent = "Create a widget";
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "anymaps-wizard-clear";
+  clearBtn.textContent = "Clear";
+
+  header.appendChild(heading);
+  header.appendChild(clearBtn);
 
   const log = document.createElement("div");
   log.className = "anymaps-wizard-log";
@@ -139,7 +150,7 @@ export function register(ctx) {
 
   form.appendChild(input);
   form.appendChild(sendBtn);
-  host.appendChild(heading);
+  host.appendChild(header);
   host.appendChild(log);
   host.appendChild(form);
   root.appendChild(host);
@@ -160,6 +171,18 @@ export function register(ctx) {
     log.scrollTop = log.scrollHeight;
     return el;
   }
+
+  function clearConversation() {
+    if (busy) return; // never clobber an in-flight turn
+    transcript = [];
+    pendingSecrets = [];
+    log.innerHTML = "";
+    input.value = "";
+    setBusy(false);
+    input.focus();
+  }
+
+  clearBtn.addEventListener("click", clearConversation);
 
   function getManager() {
     // ctx.manager is set by createManager after all feature modules

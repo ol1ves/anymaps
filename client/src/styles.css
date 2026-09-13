@@ -109,6 +109,35 @@ body {
   color: var(--anymaps-fg);
 }
 
+.anymaps-wizard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.anymaps-wizard-header .anymaps-wizard-heading {
+  margin: 0;
+}
+
+.anymaps-wizard-clear {
+  font: 12px/1.4 var(--anymaps-font);
+  border: 1px solid var(--anymaps-border-strong);
+  background: var(--anymaps-surface);
+  color: var(--anymaps-fg);
+  border-radius: var(--anymaps-radius-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease,
+    color 150ms ease;
+}
+
+.anymaps-wizard-clear:hover {
+  background: var(--anymaps-accent-soft);
+  border-color: var(--anymaps-accent);
+  color: var(--anymaps-accent);
+}
+
 /* ---- Buttons ---- */
 
 .anymaps-gallery-btn,
