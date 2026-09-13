@@ -1,0 +1,31 @@
+from server.tests.conftest import FMF_MANIFEST, FLIGHTS_MANIFEST
+
+
+def test_provision_returns_channel_routes(client):
+    r = client.post("/widgets/find-my-friends/provision", json={"manifest": FMF_MANIFEST})
+    assert r.status_code == 200
+    routes = r.json()["channelRoutes"]
+    assert routes["fmfW"].endswith("/widgets/find-my-friends/channels/fmfW")
+    assert routes["fmfR"].endswith("/widgets/find-my-friends/channels/fmfR")
+
+
+def test_provision_is_idempotent(client):
+    r1 = client.post("/widgets/find-my-friends/provision", json={"manifest": FMF_MANIFEST})
+    r2 = client.post("/widgets/find-my-friends/provision", json={"manifest": FMF_MANIFEST})
+    assert r1.status_code == 200
+    assert r1.json() == r2.json()
+
+
+def test_provision_rejects_id_mismatch(client):
+    r = client.post("/widgets/other-widget/provision", json={"manifest": FMF_MANIFEST})
+    assert r.status_code == 400
+
+
+def test_provision_starts_external_poller(client):
+    async def noop(widget_id, channel):
+        return None
+
+    client.app.state.poller._fetch_once = noop
+    r = client.post("/widgets/flights-nyc/provision", json={"manifest": FLIGHTS_MANIFEST})
+    assert r.status_code == 200
+    assert ("flights-nyc", "flights_nyc") in client.app.state.poller.tasks
