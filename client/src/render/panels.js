@@ -8,6 +8,8 @@
 // payload.title if present, else the existing title if the section exists,
 // else ctx.widgetName(widgetId). New sections start open (<details open>).
 
+import { setPanel as validateSetPanel } from "../validate.js";
+
 export function register(ctx) {
   const host = document.getElementById("panel-host");
   // widgetId -> section element
@@ -43,9 +45,8 @@ export function register(ctx) {
   }
 
   ctx.registerCommand("setPanel", (payload, widgetId) => {
-    if (!payload || typeof payload.content !== "string") {
-      throw new Error("panel missing content");
-    }
+    const err = validateSetPanel(payload);
+    if (err) throw new Error(err);
     const el = sectionFor(widgetId);
     const summary = el.querySelector(".anymaps-panel-header");
     // Title precedence: payload.title, else existing title, else widget name.
