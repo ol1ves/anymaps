@@ -32,8 +32,8 @@ npm test   # node --test "tests/**/*.test.js"
 ## Contract verification checklist
 
 `checklist.html` is a standalone page that builds its own manager and runs
-the full CONTRACTS.md coverage as check groups (sdk, render, camera, geo,
-lifecycle, gallery, wizard, persistence, three-widgets-at-once). It points
+the full CONTRACTS.md coverage as check groups (sdk, render, events, camera,
+geo, lifecycle, gallery, wizard, persistence, three-widgets-at-once). It points
 at the dev mock server for gallery and wizard flows.
 
 ```sh
