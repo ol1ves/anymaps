@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from shared.schema import load_manifest_schema
+from shared.proxy import create_prefix_strip_middleware
 from .generator import (
     publish_widget,
     store_secret,
@@ -152,6 +153,7 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
+app.middleware("http")(create_prefix_strip_middleware())
 
 
 @app.exception_handler(RequestValidationError)
