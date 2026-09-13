@@ -202,6 +202,14 @@ both routes.
     )).json()).instanceToken;
     anymaps.persist({ iid });
   }
+  // Each client persists its own friend identity. Every room member shares
+  // the token, so the id must be per-client (SPEC 9.4) or latest=1 collapses
+  // the whole room into one marker.
+  let cid = state.cid;
+  if (!cid) {
+    cid = crypto.randomUUID().slice(0, 8);
+    anymaps.persist({ cid });
+  }
   anymaps.on("viewportChanged", ({ bounds }) => refetch(bounds));
   anymaps.startGeolocation({ highAccuracy: true });
   anymaps.on("geolocation", ({ lat, lng }) => postLocation(iid, lat, lng));
@@ -221,7 +229,11 @@ both routes.
     await fetch(`${config.channelRoutes.fmfW}/instances/${iid}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clientId: iid, lat, lng }),
+      body: JSON.stringify({
+        clientId: cid,
+        lat, lng,
+        ts: Math.floor(Date.now() / 1000), // unix seconds (CONTRACTS 13)
+      }),
     });
   }
 })();
@@ -244,12 +256,14 @@ markers from the returned cache records:
       `${config.channelRoutes.bathrooms}?bounds=${bounds}`);
     const { records } = await res.json();
     for (const b of records) {
-      anymaps.addMarker({ id: b.id, lat: b.lat, lng: b.lng, icon: "🚻" });
+      anymaps.addMarker({ id: b.id, lat: b.lat, lng: b.lon, icon: "🚻" }); // GeoJSON: lon
     }
   }
 })();
 ```
 
-See `CONTRACTS.md` sections 2–6 and 8–9 for the wire format, HTTP API, and
-filter parameters, and `SPEC.md` sections 7 (the SDK) and 8 (the manifest and
-channel model) for the execution model and channel rules.
+See `CONTRACTS.md` sections 2–6, 7 (manifest schema), 8 (HTTP API), and 9
+(filter parameters) for the wire contract, and `SPEC.md` sections 7 (the
+SDK), 8 (the manifest and channel model), 10 (external fetching), and 11
+(filtering and caching) for the execution model, channel rules, the external
+block, record mappings, and why some channels lack filters.
