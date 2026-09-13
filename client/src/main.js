@@ -1,15 +1,10 @@
-import maplibregl from "maplibre-gl";
-import "maplibre-gl/dist/maplibre-gl.css";
+// Bootstrap. Constructs the WidgetManager, re-enables registry entries on
+// startup (no-op until Task 6 implements install.js startupEnable), and
+// exposes the manager for dev tooling. No direct MapLibre calls remain.
 
-// Hello world. This direct MapLibre call disappears once the WidgetManager
-// takes over the map. The SDK (src/sdk/anymaps.js) becomes the only owner.
-const map = new maplibregl.Map({
-  container: "map",
-  style: "https://demotiles.maplibre.org/style.json",
-  center: [-74.0, 40.71],
-  zoom: 11,
-});
+import { createManager } from "./manager.js";
 
-map.on("load", () => {
-  new maplibregl.Marker().setLngLat([-74.0, 40.71]).addTo(map);
-});
+const manager = createManager();
+manager.startup();
+
+window.__ANYMAPS_DEV__ = { manager };

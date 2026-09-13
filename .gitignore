@@ -9,3 +9,6 @@ data/
 *.db
 .DS_Store
 .worktrees/
+
+.sdd/
+.playwright-mcp/

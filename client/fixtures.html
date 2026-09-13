@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>anymaps</title>
+    <title>anymaps fixtures</title>
     <style>
       html,
       body {
@@ -37,61 +37,15 @@
         margin: 0 0 8px;
         font-size: 18px;
         font-weight: 600;
-        letter-spacing: -0.01em;
       }
-      #panel-host,
-      #gallery,
-      #wizard {
+      #panel-host {
         border-top: 1px solid #e5e7eb;
         margin-top: 8px;
         padding-top: 8px;
       }
-
-      /* Camera badge (Task 4 fills behavior; baseline styles here). */
-      #camera-badge {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        z-index: 1000;
-        display: none;
-        align-items: center;
-        gap: 6px;
-        background: rgba(255, 255, 255, 0.95);
-        border-radius: 8px;
-        padding: 4px 8px;
-        font: 12px/1.5 system-ui, sans-serif;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-      }
-      #camera-badge[aria-hidden="false"] {
-        display: inline-flex;
-      }
-      #camera-badge button {
-        border: 1px solid #d1d5db;
-        background: #fff;
-        border-radius: 6px;
-        padding: 1px 6px;
-        font-size: 11px;
-        cursor: pointer;
-      }
-
-      /* Widget panels (Task 3 fills behavior; baseline layout here). */
-      .anymaps-panel {
-        margin: 4px 0;
-      }
-      .anymaps-panel-header {
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 13px;
-        user-select: none;
-      }
       .anymaps-panel-body {
-        margin-top: 6px;
         font-size: 13px;
-        color: #374151;
-        line-height: 1.45;
       }
-
-      /* Markers (drawn by markers.js). */
       .anymaps-marker {
         display: flex;
         flex-direction: column;
@@ -114,12 +68,6 @@
         box-sizing: border-box;
         overflow: hidden;
       }
-      .anymaps-marker-icon img {
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        object-fit: cover;
-      }
       .anymaps-marker-label {
         margin-top: 2px;
         background: rgba(255, 255, 255, 0.92);
@@ -130,18 +78,6 @@
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
         white-space: nowrap;
       }
-
-      /* User location dot (Task 5 fills behavior; baseline here). */
-      .anymaps-user-dot {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: #1976d2;
-        border: 2px solid #fff;
-        box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.3);
-      }
-
-      /* Attribution (moved here from the Task 1 hello-world main.js). */
       .anymaps-attrib {
         display: inline-flex;
         align-items: center;
@@ -172,27 +108,18 @@
         color: inherit;
         text-decoration: none;
       }
-      .anymaps-attrib a:hover {
-        text-decoration: underline;
-      }
     </style>
   </head>
   <body>
     <div id="app">
       <div id="map-wrap">
         <div id="map"></div>
-        <div id="camera-badge" aria-hidden="true">
-          <span id="camera-badge-label">Camera</span>
-          <button id="camera-badge-release">Release</button>
-        </div>
       </div>
       <div id="sidebar">
-        <h1>anymaps</h1>
+        <h1>fixture</h1>
         <div id="panel-host"></div>
-        <div id="gallery"></div>
-        <div id="wizard"></div>
       </div>
     </div>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/fixtures/fixture-main.js"></script>
   </body>
 </html>
