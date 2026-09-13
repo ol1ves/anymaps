@@ -170,6 +170,20 @@ and map handle the MapLibre `[lng, lat]` translation. `zoom` is 0–22,
 and answers malformed commands with an error event. `flyTo`, `jumpTo`, and
 `fitBounds` need no camera lease; the most recent command wins.
 
+### Styling and dark mode
+
+`setStyles` injects CSS globally, so a widget can target the shell theme. The
+client sets `data-theme="light"` or `data-theme="dark"` on `<html>`. Author
+widget CSS with `[data-theme="dark"]` selectors to opt into dark mode:
+
+```css
+.my-card { color: #1e293b; }
+[data-theme="dark"] .my-card { color: #e2e8f0; }
+```
+
+The client themes its own chrome only. It never restyles widget content, so a
+widget that wants dark colors must provide its own dark selectors.
+
 ### Events
 
 Register with `anymaps.on(name, handler)`, remove with
