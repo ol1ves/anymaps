@@ -7,7 +7,7 @@ import jsonschema
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from shared.schema import validate_manifest
+from shared.schema import ManifestChannelError, validate_channel_matrix, validate_manifest
 from .db import get_db
 
 router = APIRouter()
@@ -23,8 +23,11 @@ def publish_widget(body: PublishRequest, db=Depends(get_db)):
     manifest = body.manifest
     try:
         validate_manifest(manifest)
+        validate_channel_matrix(manifest)
     except jsonschema.ValidationError as exc:
         raise HTTPException(status_code=400, detail=f"invalid manifest: {exc.message}")
+    except ManifestChannelError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     widget_id = manifest["id"]
     version = manifest["version"]
@@ -54,8 +57,11 @@ def publish_widget(body: PublishRequest, db=Depends(get_db)):
 
 @router.get("/widgets")
 def list_widgets(db=Depends(get_db)):
+    # One entry per widget: the most recently inserted (published) version.
     rows = db.execute(
-        "SELECT widget_id AS id, name, version, description, icon FROM widgets"
+        "SELECT widget_id AS id, name, version, description, icon "
+        "FROM widgets "
+        "WHERE rowid IN (SELECT MAX(rowid) FROM widgets GROUP BY widget_id)"
     ).fetchall()
     return [dict(row) for row in rows]
 

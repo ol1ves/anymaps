@@ -19,7 +19,9 @@ def parse_filters(query_params):
     if "until" in query_params:
         filters["until"] = _parse_float("until", query_params["until"])
     if "latest" in query_params:
-        filters["latest"] = query_params["latest"] in ("1", "true", "True")
+        if query_params["latest"] != "1":
+            raise FilterError("latest must be 1")
+        filters["latest"] = True
     return filters
 
 

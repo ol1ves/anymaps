@@ -4,36 +4,43 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import channels, db as db_module, instances, provision, registry, secrets as secrets_module
 from .poller import Poller
 
 logger = logging.getLogger("anymaps.server")
 
-ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+def _parse_origins(raw: str) -> list[str]:
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def allowed_origins() -> list[str]:
+    raw = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+    return _parse_origins(raw)
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
-    db = db_module.connect(db_path or os.environ.get("DATABASE_PATH", "data/anymaps.db"))
-    poller = Poller(db)
+    resolved_path = db_path or os.environ.get("DATABASE_PATH", "data/anymaps.db")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        poller = Poller(db_module.connect(resolved_path))
+        app.state.poller = poller
         poller.start_all()
         yield
         await poller.shutdown()
 
     app = FastAPI(title="anymaps generic widget server", lifespan=lifespan)
-    app.state.db = db
-    app.state.poller = poller
+    app.state.db_path = resolved_path
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=ALLOWED_ORIGINS,
+        allow_origins=allowed_origins(),
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -48,8 +55,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
     def health():
         return {"status": "ok"}
 
-    @app.exception_handler(HTTPException)
-    async def http_exception_handler(request: Request, exc: HTTPException):
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
     @app.exception_handler(RequestValidationError)

@@ -3,7 +3,7 @@ import copy
 import jsonschema
 import pytest
 
-from shared.schema import validate_manifest
+from shared.schema import ManifestChannelError, validate_channel_matrix, validate_manifest
 
 # The Find My Friends manifest from CONTRACTS.md section 8.4, trimmed.
 FMF = {
@@ -106,3 +106,64 @@ def test_rejects_missing_identity_fields():
     del m["description"]
     with pytest.raises(jsonschema.ValidationError):
         validate_manifest(m)
+
+
+def test_rejects_records_field_on_client_write():
+    m = copy.deepcopy(FMF)
+    m["server"]["channels"][0]["record"]["records"] = "items"
+    with pytest.raises(jsonschema.ValidationError):
+        validate_manifest(m)
+
+
+def test_rejects_private_external_channel():
+    m = copy.deepcopy(FLIGHTS)
+    m["server"]["channels"][0]["visibility"] = "private"
+    with pytest.raises(jsonschema.ValidationError):
+        validate_manifest(m)
+
+
+def test_rejects_body_on_get():
+    m = copy.deepcopy(FLIGHTS)
+    m["server"]["channels"][0]["external"]["body"] = {"a": 1}
+    with pytest.raises(jsonschema.ValidationError):
+        validate_manifest(m)
+
+
+def test_rejects_body_without_method():
+    m = copy.deepcopy(FLIGHTS)
+    m["server"]["channels"][0]["external"]["body"] = "raw"
+    del m["server"]["channels"][0]["external"]["method"]
+    with pytest.raises(jsonschema.ValidationError):
+        validate_manifest(m)
+
+
+def test_allows_body_on_post():
+    m = copy.deepcopy(FLIGHTS)
+    m["server"]["channels"][0]["external"]["method"] = "POST"
+    m["server"]["channels"][0]["external"]["body"] = {"a": 1}
+    validate_manifest(m)
+
+
+def test_channel_matrix_accepts_fmf():
+    validate_channel_matrix(FMF)
+
+
+def test_channel_matrix_rejects_duplicate_ids():
+    m = copy.deepcopy(FMF)
+    m["server"]["channels"].append(copy.deepcopy(m["server"]["channels"][0]))
+    with pytest.raises(ManifestChannelError):
+        validate_channel_matrix(m)
+
+
+def test_channel_matrix_rejects_bad_source():
+    m = copy.deepcopy(FMF)
+    m["server"]["channels"][1]["source"] = "nope"
+    with pytest.raises(ManifestChannelError):
+        validate_channel_matrix(m)
+
+
+def test_channel_matrix_rejects_visibility_mismatch():
+    m = copy.deepcopy(FMF)
+    m["server"]["channels"][1]["visibility"] = "public"
+    with pytest.raises(ManifestChannelError):
+        validate_channel_matrix(m)

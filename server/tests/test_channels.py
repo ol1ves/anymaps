@@ -80,3 +80,15 @@ def test_error_bodies_are_uniform(client, db):
     r = client.get("/widgets/nyc-bathrooms/channels/nyc_bathrooms", params={"since": "100"})
     assert r.status_code == 400
     assert "error" in r.json()
+
+
+def test_unknown_route_404_uses_error_key(client):
+    r = client.get("/no/such/route")
+    assert r.status_code == 404
+    assert r.json() == {"error": "Not Found"}
+
+
+def test_wrong_method_405_uses_error_key(client):
+    r = client.get("/secrets")
+    assert r.status_code == 405
+    assert r.json() == {"error": "Method Not Allowed"}

@@ -509,7 +509,10 @@ string; the server does not host icons for the MVP), and `server`.
      endpoint.
    - `external` + `write` — not allowed.
 4. `visibility` is `public` (one shared address, no token) or `private`
-   (instance-scoped). It is per-channel and independent on read and write.
+   (instance-scoped). It is per-channel. A client read channel must match its
+   source write channel's `visibility`: the read channel serves the write
+   channel's stored records under the same instance-token scope, so a mismatch
+   would make the read channel silently return no records.
 5. Accumulation. `mode` is `snapshot` (each write or poll replaces) or `series`
    (each write or poll appends). `retain` is time-based retention in seconds,
    for `series` only. Placement depends on origin:
