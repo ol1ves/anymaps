@@ -14,19 +14,28 @@ export const DEBOUNCE_MS = 100;
 
 // Pure debounced broadcaster. `getViewport()` -> { bounds, center, zoom };
 // `listWidgets()` -> widget id array; `emit(widgetId, name, payload)`.
-// scheduleCameraCommand(issuer): suppress = issuer, schedule broadcast.
-// moveEnd(): if suppress set, broadcast now to all except suppress, clear
-// suppress, cancel timer. Else schedule a debounced broadcast to all.
+//
+// scheduleCameraCommand(issuer): suppress = issuer, arm the fallback timer.
+// moveEnd(): if suppress set, broadcast the final viewport now to all except
+// the issuer, clear suppress, cancel the fallback timer. If suppress is null,
+// schedule a debounced broadcast to all.
+//
+// The fallback timer (100ms) is a safety net for a command that produces no
+// moveEnd. It broadcasts to all except the issuer but KEEPS suppress sticky so
+// the first real moveEnd still excludes the issuer. This closes the gap for
+// animated pans (flyTo, fitBounds) whose moveEnd lands after the debounce:
+// the timer fires mid-flight, but suppress survives so the moveEnd broadcast
+// still skips the issuer instead of rebroadcasting to it. See CONTRACTS.md
+// section 5.
 export function createViewportNotifier({ getViewport, now, setTimeout,
   clearTimeout, emit, listWidgets }) {
   void now; // accepted for parity/tests; the notifier drives via setTimeout.
   let timer = null;
   let suppress = null;
 
-  function broadcast() {
-    timer = null;
+  // Broadcast the current viewport to every widget except `suppress`.
+  function broadcastToOthers() {
     const skip = suppress;
-    suppress = null;
     const viewport = getViewport();
     for (const widgetId of listWidgets()) {
       if (widgetId === skip) continue;
@@ -34,9 +43,17 @@ export function createViewportNotifier({ getViewport, now, setTimeout,
     }
   }
 
+  // Fallback for a camera command that produces no moveEnd within the window.
+  // Broadcasts to all except the issuer but leaves suppress sticky so the
+  // first moveEnd still excludes the issuer.
+  function fallbackFire() {
+    timer = null;
+    broadcastToOthers();
+  }
+
   function schedule() {
     if (timer !== null) return; // collapse within the window
-    timer = setTimeout(broadcast, DEBOUNCE_MS);
+    timer = setTimeout(fallbackFire, DEBOUNCE_MS);
   }
 
   return {
@@ -46,9 +63,12 @@ export function createViewportNotifier({ getViewport, now, setTimeout,
     },
     moveEnd() {
       if (suppress !== null) {
-        // Broadcast immediately to all except suppress, cancel pending timer.
+        // First moveEnd after a camera command: broadcast the final viewport
+        // to all except the issuer, clear the sticky suppress, cancel any
+        // pending fallback timer.
         if (timer !== null) { clearTimeout(timer); timer = null; }
-        broadcast();
+        broadcastToOthers();
+        suppress = null;
         return;
       }
       schedule();
