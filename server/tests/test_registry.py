@@ -43,6 +43,19 @@ def test_gallery_lists_published(client):
     ]
 
 
+def test_gallery_dedupes_to_latest_version(client):
+    _publish(client, manifest=FMF_MANIFEST, bundle="v1")
+    newer = copy.deepcopy(FMF_MANIFEST)
+    newer["version"] = "0.2.0"
+    newer["description"] = "Newer description"
+    _publish(client, manifest=newer, bundle="v2")
+    r = client.get("/widgets")
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+    assert r.json()[0]["version"] == "0.2.0"
+    assert r.json()[0]["description"] == "Newer description"
+
+
 def test_manifest_fetch(client):
     _publish(client)
     r = client.get("/widgets/find-my-friends/versions/0.1.0/manifest")

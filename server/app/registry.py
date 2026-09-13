@@ -54,8 +54,11 @@ def publish_widget(body: PublishRequest, db=Depends(get_db)):
 
 @router.get("/widgets")
 def list_widgets(db=Depends(get_db)):
+    # One entry per widget: the most recently inserted (published) version.
     rows = db.execute(
-        "SELECT widget_id AS id, name, version, description, icon FROM widgets"
+        "SELECT widget_id AS id, name, version, description, icon "
+        "FROM widgets "
+        "WHERE rowid IN (SELECT MAX(rowid) FROM widgets GROUP BY widget_id)"
     ).fetchall()
     return [dict(row) for row in rows]
 
