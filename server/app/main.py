@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import channels, db as db_module, instances, provision, registry, secrets as secrets_module
 from .poller import Poller
+from shared.proxy import create_prefix_strip_middleware
 
 logger = logging.getLogger("anymaps.server")
 
@@ -20,8 +21,11 @@ def _parse_origins(raw: str) -> list[str]:
 
 
 def allowed_origins() -> list[str]:
-    raw = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-    return _parse_origins(raw)
+    raw = os.environ.get("ALLOWED_ORIGINS", "*")
+    origins = _parse_origins(raw)
+    if "*" in origins:
+        return ["*"]
+    return origins
 
 
 def create_app(db_path: str | None = None) -> FastAPI:
@@ -44,6 +48,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.middleware("http")(create_prefix_strip_middleware())
 
     app.include_router(registry.router)
     app.include_router(provision.router)

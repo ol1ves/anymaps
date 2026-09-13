@@ -16,7 +16,7 @@ def test_browser_can_preflight_wizard():
         "Access-Control-Request-Headers": "content-type",
     })
     assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.headers["access-control-allow-origin"] == "*"
 
 
 def test_model_receives_schema_and_sdk_contract(monkeypatch):

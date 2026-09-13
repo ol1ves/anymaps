@@ -17,12 +17,26 @@
 //                                     install.js has no command handlers or
 //                                     cleanup of its own, so this is a no-op.
 
-const DEFAULT_BASE_URL = "http://localhost:8000";
-const DEFAULT_AGENT_URL = "http://localhost:8001";
+// Read a Vite client env var. Vite exposes import.meta.env at runtime (and
+// statically replaces import.meta.env.VITE_* at build time). Plain Node
+// (unit tests) has no import.meta.env, so guard the access and treat a
+// missing/empty value as unset.
+function readEnvVar(name) {
+  try {
+    const value = import.meta.env[name];
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const DEFAULT_BASE_URL = readEnvVar("VITE_SERVER_URL") || "http://localhost:8000";
+const DEFAULT_AGENT_URL = readEnvVar("VITE_AGENT_URL") || "http://localhost:8001";
 const REGISTRY_KEY = "anymaps.registry";
 
-// Resolve the generic widget server base URL. __ANYMAPS_CONFIG__ wins,
-// then localStorage, then the default. Injected win/storage keep it pure.
+// Resolve the generic widget server base URL. Precedence: __ANYMAPS_CONFIG__
+// wins, then localStorage, then VITE_SERVER_URL (env), then the default.
+// Injected win/storage keep it pure.
 export function serverUrl(win, storage) {
   const cfg = win && win.__ANYMAPS_CONFIG__;
   if (cfg && typeof cfg.baseUrl === "string" && cfg.baseUrl) return cfg.baseUrl;
@@ -31,7 +45,8 @@ export function serverUrl(win, storage) {
   return DEFAULT_BASE_URL;
 }
 
-// Resolve the Agent Service base URL. Same precedence as serverUrl.
+// Resolve the Agent Service base URL. Precedence: __ANYMAPS_CONFIG__ wins,
+// then localStorage, then VITE_AGENT_URL (env), then the default.
 export function agentUrl(win, storage) {
   const cfg = win && win.__ANYMAPS_CONFIG__;
   if (cfg && typeof cfg.agentUrl === "string" && cfg.agentUrl) return cfg.agentUrl;

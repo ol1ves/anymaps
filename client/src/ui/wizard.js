@@ -12,10 +12,24 @@
 
 // --- Base URL resolution (private) -------------------------------------
 // Pinned values from the brief: agent service URL is
-// localStorage 'anymaps.agentUrl', fallback http://localhost:8001, with a
-// window.__ANYMAPS_CONFIG__.agentUrl override. install.js (Task 6) owns the
-// same resolver for its own use; this private copy keeps this file
-// file-disjoint from install.js per the controller ruling.
+// localStorage 'anymaps.agentUrl', fallback VITE_AGENT_URL then
+// http://localhost:8001, with a window.__ANYMAPS_CONFIG__.agentUrl
+// override. install.js (Task 6) owns the same resolver for its own use;
+// this private copy keeps this file file-disjoint from install.js per the
+// controller ruling.
+
+// Read a Vite client env var. Vite exposes import.meta.env at runtime; plain
+// Node (unit tests) has no import.meta.env, so guard the access and treat a
+// missing/empty value as unset.
+function readEnvVar(name) {
+  try {
+    const value = import.meta.env[name];
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function agentUrl() {
   try {
     if (typeof window !== "undefined" && window.__ANYMAPS_CONFIG__ && window.__ANYMAPS_CONFIG__.agentUrl) {
@@ -26,7 +40,7 @@ function agentUrl() {
     const v = localStorage.getItem("anymaps.agentUrl");
     if (v) return v;
   } catch (e) { /* ignore */ }
-  return "http://localhost:8001";
+  return readEnvVar("VITE_AGENT_URL") || "http://localhost:8001";
 }
 
 // --- Pure helpers ------------------------------------------------------
