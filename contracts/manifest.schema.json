@@ -115,10 +115,11 @@
           "not": { "anyOf": [{ "required": ["record"] }, { "required": ["external"] }, { "required": ["mode"] }, { "required": ["retain"] }] }
         },
         {
-          "description": "external read: clients GET the poller's cache",
+          "description": "external read: clients GET the poller's cache; public-only",
           "properties": {
             "origin": { "const": "external" },
-            "direction": { "const": "read" }
+            "direction": { "const": "read" },
+            "visibility": { "const": "public" }
           },
           "required": ["origin", "direction", "external"],
           "not": { "anyOf": [{ "required": ["source"] }, { "required": ["mode"] }, { "required": ["retain"] }] }

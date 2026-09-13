@@ -106,3 +106,10 @@ def test_rejects_missing_identity_fields():
     del m["description"]
     with pytest.raises(jsonschema.ValidationError):
         validate_manifest(m)
+
+
+def test_rejects_private_external_channel():
+    m = copy.deepcopy(FLIGHTS)
+    m["server"]["channels"][0]["visibility"] = "private"
+    with pytest.raises(jsonschema.ValidationError):
+        validate_manifest(m)
