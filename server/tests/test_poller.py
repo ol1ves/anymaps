@@ -33,6 +33,29 @@ def test_fetch_once_stores_series_records(tmp_path):
     db.close()
 
 
+def test_request_includes_default_user_agent(tmp_path):
+    from shared.http import DEFAULT_USER_AGENT
+
+    db = connect(str(tmp_path / "t.db"))
+    poller = Poller(db)
+    seen = {}
+
+    def handler(request):
+        seen["ua"] = request.headers.get("User-Agent")
+        return httpx.Response(200, json={})
+
+    async def run():
+        poller.client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), follow_redirects=False
+        )
+        await poller._request({"url": "https://example.com/x"})
+        await poller.client.aclose()
+
+    asyncio.run(run())
+    assert seen["ua"] == DEFAULT_USER_AGENT
+    db.close()
+
+
 def test_request_rejects_non_https(tmp_path):
     db = connect(str(tmp_path / "t.db"))
     poller = Poller(db)
