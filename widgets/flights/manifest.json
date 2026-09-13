@@ -1,0 +1,30 @@
+{
+  "id": "flights-nyc",
+  "name": "Flights NYC",
+  "version": "0.1.0",
+  "description": "Live aircraft over New York City",
+  "server": {
+    "channels": [
+      {
+        "id": "flights_nyc",
+        "origin": "external",
+        "direction": "read",
+        "visibility": "public",
+        "external": {
+          "method": "GET",
+          "url": "https://api.adsb.lol/v2/point/40.71/-74.0/250",
+          "interval": 5,
+          "mode": "series",
+          "retain": 3600,
+          "record": {
+            "records": "ac",
+            "id": "hex",
+            "lat": "lat",
+            "lon": "lon",
+            "time": "@ingestedAt"
+          }
+        }
+      }
+    ]
+  }
+}

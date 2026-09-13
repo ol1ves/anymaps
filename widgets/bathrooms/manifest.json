@@ -1,0 +1,34 @@
+{
+  "id": "nyc-bathrooms",
+  "name": "NYC Public Bathrooms",
+  "version": "0.1.0",
+  "description": "Public bathrooms across New York City",
+  "server": {
+    "channels": [
+      {
+        "id": "bathrooms",
+        "origin": "external",
+        "direction": "read",
+        "visibility": "public",
+        "external": {
+          "method": "POST",
+          "url": "https://overpass-api.de/api/interpreter",
+          "headers": {
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "anymaps/0.1 (development)"
+          },
+          "body": "[out:json];node[\"amenity\"=\"toilets\"](40.47,-74.26,40.92,-73.70);out;",
+          "interval": 86400,
+          "mode": "snapshot",
+          "record": {
+            "records": "elements",
+            "id": "id",
+            "lat": "lat",
+            "lon": "lon"
+          }
+        }
+      }
+    ]
+  }
+}

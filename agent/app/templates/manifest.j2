@@ -1,0 +1,9 @@
+{# Universal anymaps manifest shape. Values are supplied by the generator. #}
+{
+  "id": {{ id | tojson }},
+  "name": {{ name | tojson }},
+  "version": {{ version | tojson }},
+  "description": {{ description | tojson }},
+  {% if icon is defined and icon %}"icon": {{ icon | tojson }},{% endif %}
+  "server": {"channels": {{ channels | tojson }}}
+}

@@ -446,6 +446,7 @@ the panel resends the full transcript on every turn. No streaming.
 | route | method | request | response |
 |-------|--------|---------|----------|
 | `/wizard/generate` | POST | `{ "messages": [ { "role": "...", "content": "..." } ] }` | clarifying or done, below |
+| `/wizard/secrets` | POST | `{ "value": "<secret>", "source": {...}, "auth": {...} }` | `201 { "secretId": "<id>" }` |
 
 `messages` is a non-empty array. `role` is `user` or `assistant`. The first
 call holds one user message. On later calls the panel resends the whole
@@ -484,3 +485,11 @@ Rules:
 
 Errors: `400` malformed messages or a blocked source, `500` generation or
 publish failure. Body shape `{ "error": "message" }`.
+
+`/wizard/secrets` is a temporary key-verification route. It receives the raw
+key outside the `messages` transcript, tests the supplied source once using the
+declared header or query authentication, then forwards the value to the
+generic server's existing `POST /secrets` route. It returns only the resulting
+`secretId`; the raw key is never sent to the LLM, returned, or logged. A blocked
+source returns `400 { "error": "source blocked by SSRF rules" }`. A failed
+verification returns `400 { "error": "source verification failed: ..." }`.

@@ -1,0 +1,31 @@
+{
+  "id": "find-my-friends",
+  "name": "Find My Friends",
+  "version": "0.1.0",
+  "description": "Share live locations with friends in a private room",
+  "server": {
+    "channels": [
+      {
+        "id": "fmfW",
+        "origin": "client",
+        "direction": "write",
+        "visibility": "private",
+        "mode": "series",
+        "retain": 3600,
+        "record": {
+          "id": "clientId",
+          "lat": "lat",
+          "lon": "lng",
+          "time": "ts"
+        }
+      },
+      {
+        "id": "fmfR",
+        "origin": "client",
+        "direction": "read",
+        "visibility": "private",
+        "source": "fmfW"
+      }
+    ]
+  }
+}
