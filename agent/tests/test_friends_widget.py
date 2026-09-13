@@ -48,6 +48,18 @@ def test_friends_bundle_is_classic_worker_safe_and_uses_contract_routes():
     assert "anymaps.addMarker" in bundle
     assert "anymaps.updateMarker" in bundle
     assert "anymaps.removeMarker" in bundle
+    assert "anymaps.flyTo({ center: [friend.lat, friend.lng], zoom: 14 })" in bundle
+    assert "refreshInFlight" in bundle
+    assert "anymaps.persist({ iid, displayName })" in bundle
+    assert "function personKey(record)" in bundle
+    assert "showUserDot: false" in bundle
+    assert "anymaps.flyTo({ center: [lat, lng], zoom: 14 })" in bundle
+    assert 'data-anymaps-action="leave-room"' in bundle
+    assert 'showRoomPanel("Friend locations are temporarily unavailable.")' in bundle
+    assert "if (!started || iid !== room) return;" in bundle
+    assert 'anymaps.stopGeolocation()' in bundle
+    assert 'anymaps.persist({ iid: null })' in bundle
+    assert 'anymaps.off("geolocation", geolocationHandler)' in bundle
     assert "export " not in bundle
     assert "import " not in bundle
     for forbidden in ("window", "document", "navigator", "localStorage", "postMessage"):

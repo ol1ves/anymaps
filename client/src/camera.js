@@ -15,6 +15,9 @@
 import maplibregl from "maplibre-gl";
 
 export const TTL_MS = 10000;
+const CAMERA_PAN_MS = 1400;
+const easeInOutCubic = (t) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 // Pure camera lease state machine. FREE or LOCKED(owner). One owner, never
 // two. `onEvent` is called synchronously for grant/revoke. The timer is
@@ -195,7 +198,14 @@ export function register(ctx) {
       throw new Error("flyTo center must be [lat, lng]");
     }
     const [lat, lng] = payload.center;
-    const opts = { center: [lng, lat] };
+    const opts = {
+      center: [lng, lat],
+      duration: CAMERA_PAN_MS,
+      // Marker selection is an explicit user action. MapLibre otherwise
+      // turns flyTo into jumpTo when prefers-reduced-motion is enabled.
+      essential: true,
+      easing: easeInOutCubic,
+    };
     if (payload.zoom != null) opts.zoom = payload.zoom;
     if (payload.bearing != null) opts.bearing = payload.bearing;
     pan(widgetId, () => map.flyTo(opts));
