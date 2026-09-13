@@ -48,6 +48,20 @@ def test_query_latest_then_bounds(tmp_path):
     db.close()
 
 
+def test_query_latest_preserves_ascending_time_order(tmp_path):
+    db = connect(str(tmp_path / "t.db"))
+    records.store_records(db, "w", "c", None, CHANNEL, [{"hex": "a"}], 100.0)
+    records.store_records(db, "w", "c", None, CHANNEL, [{"hex": "a"}], 400.0)
+    records.store_records(db, "w", "c", None, CHANNEL, [{"hex": "b"}], 200.0)
+    records.store_records(db, "w", "c", None, CHANNEL, [{"hex": "b"}], 300.0)
+
+    mapping = CHANNEL["record"]
+    filters = filter_mod.parse_filters({"latest": "1"})
+    result = filter_mod.query_records(db, "w", "c", None, mapping, filters)
+    assert [r["hex"] for r in result] == ["b", "a"]
+    db.close()
+
+
 def test_query_ids_since_until(tmp_path):
     db = connect(str(tmp_path / "t.db"))
     records.store_records(db, "w", "c", None, CHANNEL, [{"hex": "a"}], 100.0)

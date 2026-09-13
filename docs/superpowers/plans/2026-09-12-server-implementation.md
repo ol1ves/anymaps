@@ -787,7 +787,7 @@ def query_records(db, widget_id, channel_id, instance_token, mapping, filters):
             current = newest.get(r["id_key"])
             if current is None or _later(r, current):
                 newest[r["id_key"]] = r
-        items = list(newest.values())
+        items = sorted(newest.values(), key=lambda r: (r["time"] is None, r["time"]))
 
     if "bounds" in filters:
         south, west, north, east = filters["bounds"]
