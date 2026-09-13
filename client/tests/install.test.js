@@ -15,6 +15,7 @@ import {
   upsertRegistry,
   removeRegistryEntry,
   provision,
+  installWidget,
 } from "../src/install.js";
 
 function makeStorage(initial = {}) {
@@ -165,5 +166,79 @@ test("provision throws on non-2xx with body error", async () => {
     await assert.rejects(provision(manifest, "http://host"), /provision failed: 500 boom/);
   } finally {
     globalThis.fetch = origFetch;
+  }
+});
+
+// ---- installWidget: registry flips enabled:false on enable failure ----
+
+function makeLocalStorage(initial = {}) {
+  const store = { ...initial };
+  return {
+    getItem(k) {
+      return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null;
+    },
+    setItem(k, v) { store[k] = String(v); },
+    removeItem(k) { delete store[k]; },
+  };
+}
+
+test("installWidget writes enabled:false when manager.enable throws", async () => {
+  const origFetch = globalThis.fetch;
+  const origWindow = globalThis.window;
+  const origStorage = globalThis.localStorage;
+  const storage = makeLocalStorage();
+  globalThis.window = {};
+  globalThis.localStorage = storage;
+  globalThis.fetch = async (url) => {
+    if (/\/manifest$/.test(url)) {
+      return { ok: true, status: 200, json: async () => ({ id: "w", version: "1.0.0" }) };
+    }
+    if (/\/bundle$/.test(url)) {
+      return { ok: true, status: 200, text: async () => "bundle-src" };
+    }
+    return { ok: false, status: 404, json: async () => ({}), text: async () => "" };
+  };
+  // manager.enable throws (e.g. provision non-2xx).
+  const manager = {
+    enable: async () => { throw new Error("enable failed"); },
+  };
+  try {
+    await assert.rejects(installWidget(manager, "w", "1.0.0"), /enable failed/);
+    const reg = JSON.parse(storage.getItem("anymaps.registry"));
+    assert.deepEqual(reg, [{ widgetId: "w", version: "1.0.0", enabled: false }]);
+  } finally {
+    globalThis.fetch = origFetch;
+    globalThis.window = origWindow;
+    globalThis.localStorage = origStorage;
+  }
+});
+
+test("installWidget leaves enabled:true on success", async () => {
+  const origFetch = globalThis.fetch;
+  const origWindow = globalThis.window;
+  const origStorage = globalThis.localStorage;
+  const storage = makeLocalStorage();
+  globalThis.window = {};
+  globalThis.localStorage = storage;
+  let enabled = false;
+  globalThis.fetch = async (url) => {
+    if (/\/manifest$/.test(url)) {
+      return { ok: true, status: 200, json: async () => ({ id: "w", version: "1.0.0" }) };
+    }
+    if (/\/bundle$/.test(url)) {
+      return { ok: true, status: 200, text: async () => "bundle-src" };
+    }
+    return { ok: false, status: 404, json: async () => ({}), text: async () => "" };
+  };
+  const manager = { enable: async () => { enabled = true; } };
+  try {
+    await installWidget(manager, "w", "1.0.0");
+    assert.equal(enabled, true);
+    const reg = JSON.parse(storage.getItem("anymaps.registry"));
+    assert.deepEqual(reg, [{ widgetId: "w", version: "1.0.0", enabled: true }]);
+  } finally {
+    globalThis.fetch = origFetch;
+    globalThis.window = origWindow;
+    globalThis.localStorage = origStorage;
   }
 });

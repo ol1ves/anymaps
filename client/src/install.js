@@ -116,7 +116,17 @@ export async function installWidget(manager, id, version) {
   const next = upsertRegistry(reg, { widgetId: id, version, enabled: true });
   saveRegistry(localStorage, next);
 
-  await manager.enable({ manifest, bundleSource, baseUrl });
+  try {
+    await manager.enable({ manifest, bundleSource, baseUrl });
+  } catch (e) {
+    // manager.enable threw (e.g. provision non-2xx). The widget is installed
+    // but not enabled; reflect that in the registry so startup does not
+    // retry it and the gallery shows Enable rather than a dead Enabled.
+    const regNow = loadRegistry(localStorage);
+    const down = upsertRegistry(regNow, { widgetId: id, version, enabled: false });
+    saveRegistry(localStorage, down);
+    throw e;
+  }
   return { manifest, bundleSource, baseUrl };
 }
 

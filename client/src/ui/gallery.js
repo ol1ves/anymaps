@@ -208,9 +208,11 @@ export function register(ctx) {
           try {
             await ctx.manager.install(item.id, item.version);
           } catch (e) {
-            // Render the error inline on this item. The next bus event or
-            // refresh clears it.
+            // Re-render the full item first so the controls are back in
+            // the DOM (the in-flight state showed only a badge), then
+            // append the inline error.
             pending.delete(item.id);
+            render();
             renderErrFor(item.id, e.message || "install failed");
             return;
           }
@@ -223,13 +225,22 @@ export function register(ctx) {
         addBtn("Disable", () => ctx.manager.disable(item.id));
         addBtn("Uninstall", () => ctx.manager.uninstall(item.id), { background: "#fef2f2" });
       } else {
+        // Re-enable uses the stored registry version, not the listed server
+        // version (the brief pins "re-installs via install path with the
+        // stored version"). Falls back to the listed version only when the
+        // registry has no entry.
+        const storedVersion = (entry && entry.version) || item.version;
         addBtn("Enable", async () => {
           pending.add(item.id);
           render();
           try {
-            await ctx.manager.install(item.id, item.version);
+            await ctx.manager.install(item.id, storedVersion);
           } catch (e) {
+            // Re-render the full item first so the controls are back in
+            // the DOM (the in-flight state showed only a badge), then
+            // append the inline error.
             pending.delete(item.id);
+            render();
             renderErrFor(item.id, e.message || "enable failed");
             return;
           }
