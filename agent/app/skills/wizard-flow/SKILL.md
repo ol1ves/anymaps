@@ -90,6 +90,14 @@ Unreasonable (default instead of asking):
 - rendering: markers plus a legend panel.
 - widgetId: kebab-case from the request; version: 1.0.0 for the first publish.
 
+## Geographic scope
+
+When the user names a fixed area (a state, city, country, or region), encode
+that scope in the external source itself — the URL, query, or POST body — using
+the API's own location parameter (for example `?state=NY`, or a bounding box in
+an Overpass body). Do not rely only on the viewport `bounds` filter for a fixed
+area; `bounds` is only for "show what is currently in view" widgets.
+
 Secrets and API keys are never requested or returned in chat.
 
 ## Proposal format
