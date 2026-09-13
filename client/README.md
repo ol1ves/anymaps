@@ -29,6 +29,23 @@ Agent Service at `http://localhost:8001`. CORS must allow `http://localhost:5173
 npm test   # node --test "tests/**/*.test.js"
 ```
 
+## Contract verification checklist
+
+`checklist.html` is a standalone page that builds its own manager and runs
+the full CONTRACTS.md coverage as check groups (sdk, render, camera, geo,
+lifecycle, gallery, wizard, persistence, three-widgets-at-once). It points
+at the dev mock server for gallery and wizard flows.
+
+```sh
+npm run mock                    # dev mock server on :8000
+npm run dev                     # vite, then open the URL below
+```
+
+Open `/checklist.html?auto=1` to auto-run every group. Phase 1 enables a
+persist widget and reloads into `?auto=1&phase=2` to verify state survival
+across a real re-enable cycle. Both phases must end with every check green.
+Click `Run checks` to run manually without the reload.
+
 ## Widget authoring guide
 
 A widget is a JavaScript bundle that runs in a Web Worker. The worker has no
