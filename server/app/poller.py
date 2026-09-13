@@ -7,17 +7,21 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from shared.http import with_user_agent
 from shared.ssrf import assert_source_url_allowed
 from . import records
 
 logger = logging.getLogger("anymaps.server")
+
+# Some public sources (notably Overpass) routinely take 8-15s when busy.
+POLL_TIMEOUT_SECONDS = 30.0
 
 
 class Poller:
     def __init__(self, db):
         self.db = db
         self.tasks = {}
-        self.client = httpx.AsyncClient(timeout=10, follow_redirects=False)
+        self.client = httpx.AsyncClient(timeout=POLL_TIMEOUT_SECONDS, follow_redirects=False)
 
     def start(self, widget_id, channel):
         key = (widget_id, channel["id"])
@@ -56,7 +60,7 @@ class Poller:
         method = ext.get("method", "GET")
         url = ext["url"]
         params = dict(ext.get("query") or {})
-        headers = dict(ext.get("headers") or {})
+        headers = with_user_agent(ext.get("headers"))
         body = ext.get("body")
 
         auth_injected = None

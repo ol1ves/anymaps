@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from typing import Any, Literal
@@ -19,6 +20,7 @@ from .generator import (
     test_candidate_sources,
     validate_candidate,
 )
+from .skills import WIZARD_FLOW_SKILL, load_skill_body
 from .source_test import (
     SecretAuthSpec,
     SourceBlockedError,
@@ -38,8 +40,23 @@ DEEPSEEK_MODEL = "deepseek-v4-flash"
 MAX_MESSAGES = 24
 MAX_CONTENT_CHARS = 12_000
 MAX_TRANSCRIPT_CHARS = 48_000
-REQUEST_TIMEOUT_SECONDS = 50.0
-MAX_OUTPUT_TOKENS = 8_000
+# deepseek-v4-flash is a reasoning model: chain-of-thought tokens share the
+# max_tokens budget with the answer. A full widget-generation turn measured
+# ~14k completion tokens (~12k of them reasoning), so the old 8k cap ended
+# with finish_reason=length and an empty content string ("invalid JSON").
+REQUEST_TIMEOUT_SECONDS = 180.0
+MAX_OUTPUT_TOKENS = 32_000
+
+# Transient DeepSeek failures (connection resets during long generations,
+# rate limits, and 5xx) get one retry before the wizard turn fails.
+MAX_DEEPSEEK_ATTEMPTS = 2
+RETRY_BACKOFF_SECONDS = 2.0
+RETRYABLE_HTTP_STATUS = frozenset({429, 500, 502, 503, 504})
+RETRYABLE_TRANSPORT_ERRORS = (
+    httpx.ReadError,
+    httpx.ConnectError,
+    httpx.RemoteProtocolError,
+)
 
 MISSING_KEY_MESSAGE = (
     "DeepSeek API key is not configured. Add your DeepSeek API key to get started."
@@ -47,19 +64,10 @@ MISSING_KEY_MESSAGE = (
 
 SYSTEM_PROMPT = """You are the anymaps widget wizard.
 
-The user is describing a map widget. Work conversationally and ask exactly one
-clarifying question when the requirements, data source, API details, or visual
-behavior are not sufficiently defined. The full transcript is supplied on every
-turn, so do not assume server-side memory.
-
-Return JSON only, with no markdown or explanatory text. Until the user has
-approved the proposed widget, return exactly:
-{"done": false, "questions": ["one concise question"]}
-
-Only after the user explicitly approves the proposed result may a later wizard
-stage return done=true. For a ready internal candidate, return done=true with
-widgetId, version, manifest, and bundle. The service removes bundle before it
-responds to the client. Do not put API keys or other secrets in your response.
+The user is describing a map widget. Run the conversation by following the
+wizard-flow skill below. The full transcript is supplied on every turn, so do
+not assume server-side memory. Return JSON only, with no markdown or commentary,
+and never put API keys or other secrets in your response.
 """
 
 
@@ -225,7 +233,8 @@ def _extract_json_content(response_json: dict[str, Any]) -> dict[str, Any]:
     """Extract the object from a non-streaming Chat Completions response."""
 
     try:
-        content = response_json["choices"][0]["message"]["content"]
+        choice = response_json["choices"][0]
+        content = choice["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError("DeepSeek returned no assistant content") from exc
     if not isinstance(content, str):
@@ -239,17 +248,43 @@ def _extract_json_content(response_json: dict[str, Any]) -> dict[str, Any]:
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:
+        if choice.get("finish_reason") == "length":
+            raise ValueError(
+                "DeepSeek response was truncated (finish_reason=length) "
+                "before it produced complete JSON"
+            ) from exc
         raise ValueError("DeepSeek returned invalid JSON") from exc
     if not isinstance(parsed, dict):
         raise ValueError("DeepSeek returned a JSON value instead of an object")
     return parsed
 
 
+class _DeepSeekRetryableError(Exception):
+    """A DeepSeek response that should be retried (rate limit or server error)."""
+
+
+async def _request_deepseek_json(
+    client: httpx.AsyncClient, api_key: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    """POST one DeepSeek request and return its parsed JSON body."""
+
+    response = await client.post(
+        DEEPSEEK_CHAT_URL,
+        headers={"Authorization": f"Bearer {api_key}"},
+        json=body,
+    )
+    if response.status_code in RETRYABLE_HTTP_STATUS:
+        raise _DeepSeekRetryableError(f"HTTP {response.status_code}")
+    response.raise_for_status()
+    return response.json()
+
+
 async def call_deepseek(messages: list[Message], api_key: str) -> dict[str, Any]:
-    """Make exactly one bounded DeepSeek request for a wizard turn."""
+    """Make one bounded DeepSeek request for a wizard turn, retrying transient errors once."""
 
     request_messages = [
-        {"role": "system", "content": SYSTEM_PROMPT + GENERATION_CONTRACT
+        {"role": "system", "content": SYSTEM_PROMPT + load_skill_body(WIZARD_FLOW_SKILL)
+         + GENERATION_CONTRACT
          + "\nManifest JSON Schema:\n" + json.dumps(load_manifest_schema())},
         *[{"role": item.role, "content": item.content} for item in messages],
     ]
@@ -261,26 +296,35 @@ async def call_deepseek(messages: list[Message], api_key: str) -> dict[str, Any]
         "max_tokens": MAX_OUTPUT_TOKENS,
         "stream": False,
     }
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-            response = await client.post(
-                DEEPSEEK_CHAT_URL,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json=body,
-            )
-            response.raise_for_status()
-            response_json = response.json()
-    except httpx.TimeoutException as exc:
-        raise HTTPException(status_code=500, detail="DeepSeek request timed out") from exc
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=500, detail="DeepSeek request failed") from exc
-    except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(status_code=500, detail="DeepSeek request failed") from exc
 
-    try:
-        return _parse_model_response(_extract_json_content(response_json))
-    except ValueError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    last_cause = "unknown"
+    for attempt in range(MAX_DEEPSEEK_ATTEMPTS):
+        try:
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+                response_json = await _request_deepseek_json(client, api_key, body)
+        except _DeepSeekRetryableError as exc:
+            last_cause = str(exc)
+        except RETRYABLE_TRANSPORT_ERRORS as exc:
+            last_cause = type(exc).__name__
+        except httpx.TimeoutException as exc:
+            raise HTTPException(status_code=500, detail="DeepSeek request timed out") from exc
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"DeepSeek request failed: HTTP {exc.response.status_code}",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail="DeepSeek request failed") from exc
+        else:
+            try:
+                return _parse_model_response(_extract_json_content(response_json))
+            except ValueError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        if attempt < MAX_DEEPSEEK_ATTEMPTS - 1:
+            await asyncio.sleep(RETRY_BACKOFF_SECONDS)
+
+    raise HTTPException(status_code=500, detail=f"DeepSeek request failed ({last_cause})")
 
 
 @app.post("/wizard/generate")

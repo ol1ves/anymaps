@@ -7,16 +7,26 @@ code.  Every request is checked with the same SSRF helper used by the server.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Literal
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
+from shared.http import with_user_agent
 from shared.ssrf import assert_source_url_allowed
 
 
-SOURCE_TIMEOUT_SECONDS = 10.0
+SOURCE_TIMEOUT_SECONDS = 30.0
+MAX_SOURCE_ATTEMPTS = 2
+SOURCE_RETRY_BACKOFF_SECONDS = 2.0
+RETRYABLE_SOURCE_STATUS = frozenset({429, 500, 502, 503, 504})
+RETRYABLE_SOURCE_TRANSPORT_ERRORS = (
+    httpx.ReadError,
+    httpx.ConnectError,
+    httpx.RemoteProtocolError,
+)
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_REDIRECTS = 3
 MAX_ARRAY_SUMMARIES = 16
@@ -31,6 +41,10 @@ class SourceTestError(RuntimeError):
 
 class SourceBlockedError(SourceTestError):
     """The source violates the shared HTTPS/SSRF rules."""
+
+
+class _SourceRetryableError(Exception):
+    """A transient upstream failure that the source test should retry."""
 
 
 class SourceSpec(BaseModel):
@@ -93,7 +107,7 @@ def _validate_source_spec(source: SourceSpec) -> None:
 
 def _request_kwargs(source: SourceSpec, url: str, method: str) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
-        "headers": dict(source.headers),
+        "headers": with_user_agent(source.headers),
         "params": dict(source.query) if source.query else None,
     }
     if method == "POST" and source.body is not None:
@@ -163,7 +177,7 @@ def summarize_json(value: Any) -> dict[str, Any]:
     return result
 
 
-async def test_source(
+async def _test_source_once(
     source: SourceSpec,
     *,
     transport: httpx.AsyncBaseTransport | None = None,
@@ -218,6 +232,10 @@ async def test_source(
                         continue
 
                     if response.status_code < 200 or response.status_code >= 300:
+                        if response.status_code in RETRYABLE_SOURCE_STATUS:
+                            raise _SourceRetryableError(
+                                f"HTTP {response.status_code}"
+                            )
                         raise SourceTestError(
                             f"source returned HTTP {response.status_code}"
                         )
@@ -227,7 +245,9 @@ async def test_source(
     except SourceTestError:
         raise
     except httpx.TimeoutException as exc:
-        raise SourceTestError("source request timed out") from exc
+        raise _SourceRetryableError("timeout") from exc
+    except RETRYABLE_SOURCE_TRANSPORT_ERRORS as exc:
+        raise _SourceRetryableError(type(exc).__name__) from exc
     except httpx.HTTPError as exc:
         raise SourceTestError("source request failed") from exc
 
@@ -244,3 +264,21 @@ async def test_source(
     }
     result.update(summarize_json(payload))
     return result
+
+
+async def test_source(
+    source: SourceSpec,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> dict[str, Any]:
+    """Test one source, retrying transient upstream failures once."""
+
+    last_cause = "unknown"
+    for attempt in range(MAX_SOURCE_ATTEMPTS):
+        try:
+            return await _test_source_once(source, transport=transport)
+        except _SourceRetryableError as exc:
+            last_cause = str(exc)
+        if attempt < MAX_SOURCE_ATTEMPTS - 1:
+            await asyncio.sleep(SOURCE_RETRY_BACKOFF_SECONDS)
+    raise SourceTestError(f"source test failed ({last_cause})")
