@@ -691,7 +691,7 @@ def test_query_ids_since_until(tmp_path):
     mapping = CHANNEL["record"]
     filters = filter_mod.parse_filters({"ids": "a,c", "since": "150", "until": "350"})
     result = filter_mod.query_records(db, "w", "c", None, mapping, filters)
-    assert sorted(r["hex"] for r in result) == ["a", "c"]
+    assert sorted(r["hex"] for r in result) == ["c"]
     db.close()
 ```
 
