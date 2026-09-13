@@ -10,3 +10,4 @@ data/
 .DS_Store
 
 .sdd/
+.playwright-mcp/
