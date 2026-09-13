@@ -1,3 +1,5 @@
+import copy
+
 from server.tests.conftest import FMF_MANIFEST, FLIGHTS_MANIFEST
 
 
@@ -19,6 +21,15 @@ def test_provision_is_idempotent(client):
 def test_provision_rejects_id_mismatch(client):
     r = client.post("/widgets/other-widget/provision", json={"manifest": FMF_MANIFEST})
     assert r.status_code == 400
+
+
+def test_provision_rejects_duplicate_channel_ids(client):
+    manifest = copy.deepcopy(FMF_MANIFEST)
+    dup = copy.deepcopy(FMF_MANIFEST["server"]["channels"][0])
+    manifest["server"]["channels"].append(dup)
+    r = client.post("/widgets/find-my-friends/provision", json={"manifest": manifest})
+    assert r.status_code == 400
+    assert r.json() == {"error": "duplicate channel id"}
 
 
 def test_provision_starts_external_poller(client):

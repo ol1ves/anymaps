@@ -1,5 +1,6 @@
 """FastAPI app factory for the anymaps generic widget server."""
 
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -10,6 +11,8 @@ from fastapi.responses import JSONResponse
 
 from . import channels, db as db_module, instances, provision, registry, secrets as secrets_module
 from .poller import Poller
+
+logger = logging.getLogger("anymaps.server")
 
 ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
@@ -52,6 +55,11 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         return JSONResponse(status_code=400, content={"error": "malformed body"})
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        logger.exception("unhandled error")
+        return JSONResponse(status_code=500, content={"error": "internal server error"})
 
     return app
 

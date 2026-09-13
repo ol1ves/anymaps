@@ -1,6 +1,7 @@
 """Idempotent channel provisioning (CONTRACTS.md §8, SPEC §9.1)."""
 
 import json
+import sqlite3
 import time
 
 import jsonschema
@@ -31,6 +32,10 @@ async def provision_widget(widget_id: str, body: ProvisionRequest, request: Requ
     if manifest["id"] != widget_id:
         raise HTTPException(status_code=400, detail="manifest id does not match URL")
 
+    ids = [channel["id"] for channel in manifest["server"]["channels"]]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=400, detail="duplicate channel id")
+
     existing = db.execute(
         "SELECT channel_id FROM channels WHERE widget_id = ?", (widget_id,)
     ).fetchall()
@@ -45,13 +50,17 @@ async def provision_widget(widget_id: str, body: ProvisionRequest, request: Requ
 
     channel_routes = {}
     now = time.time()
-    for channel in manifest["server"]["channels"]:
-        db.execute(
-            "INSERT INTO channels (widget_id, channel_id, config, provisioned_at) VALUES (?, ?, ?, ?)",
-            (widget_id, channel["id"], json.dumps(channel), now),
-        )
-        channel_routes[channel["id"]] = _route(base_url, widget_id, channel["id"])
-    db.commit()
+    try:
+        for channel in manifest["server"]["channels"]:
+            db.execute(
+                "INSERT INTO channels (widget_id, channel_id, config, provisioned_at) VALUES (?, ?, ?, ?)",
+                (widget_id, channel["id"], json.dumps(channel), now),
+            )
+            channel_routes[channel["id"]] = _route(base_url, widget_id, channel["id"])
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="duplicate channel id")
 
     poller = request.app.state.poller
     for channel in manifest["server"]["channels"]:
