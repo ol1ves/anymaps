@@ -404,6 +404,18 @@ body {
   outline-offset: 2px;
 }
 
+/* ---- MapLibre stacking ---- */
+
+/* Markers carry large z-index values for per-widget draw order
+ * (commands/markers.js). Scope them inside the canvas container so they stay
+ * under MapLibre's control container (z-index 2) instead of over the zoom
+ * controls. */
+.maplibregl-canvas-container {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
 /* ---- Markers ---- */
 
 .anymaps-marker {
