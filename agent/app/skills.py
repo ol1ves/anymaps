@@ -11,6 +11,7 @@ from pathlib import Path
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 
 WIZARD_FLOW_SKILL = "wizard-flow"
+WIDGET_EXAMPLES_SKILL = "widget-examples"
 
 
 def load_skill_body(name: str) -> str:

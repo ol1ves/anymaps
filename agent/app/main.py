@@ -20,7 +20,7 @@ from .generator import (
     test_candidate_sources,
     validate_candidate,
 )
-from .skills import WIZARD_FLOW_SKILL, load_skill_body
+from .skills import WIDGET_EXAMPLES_SKILL, WIZARD_FLOW_SKILL, load_skill_body
 from .source_test import (
     SecretAuthSpec,
     SourceBlockedError,
@@ -330,23 +330,33 @@ async def _request_deepseek_json(
     return response.json()
 
 
-async def call_deepseek(messages: list[Message], api_key: str) -> dict[str, Any]:
-    """Make one bounded DeepSeek request for a wizard turn, retrying transient errors once."""
+def _build_deepseek_body(messages: list[Message]) -> dict[str, Any]:
+    """Assemble the system prompt and transcript for one DeepSeek request."""
 
-    request_messages = [
-        {"role": "system", "content": SYSTEM_PROMPT + load_skill_body(WIZARD_FLOW_SKILL)
-         + GENERATION_CONTRACT
-         + "\nManifest JSON Schema:\n" + json.dumps(load_manifest_schema())},
-        *[{"role": item.role, "content": item.content} for item in messages],
-    ]
-    body = {
-        "model": DEEPSEEK_MODEL,
-        "messages": request_messages,
+    system = (
+        SYSTEM_PROMPT
+        + load_skill_body(WIZARD_FLOW_SKILL)
+        + load_skill_body(WIDGET_EXAMPLES_SKILL)
+        + GENERATION_CONTRACT
+        + "\nManifest JSON Schema:\n" + json.dumps(load_manifest_schema())
+    )
+    return {
+        "model": os.getenv("WIZARD_LLM_MODEL", DEEPSEEK_MODEL),
+        "messages": [
+            {"role": "system", "content": system},
+            *[{"role": item.role, "content": item.content} for item in messages],
+        ],
         "response_format": {"type": "json_object"},
         "temperature": 0.2,
         "max_tokens": MAX_OUTPUT_TOKENS,
         "stream": False,
     }
+
+
+async def call_deepseek(messages: list[Message], api_key: str) -> dict[str, Any]:
+    """Make one bounded DeepSeek request for a wizard turn, retrying transient errors once."""
+
+    body = _build_deepseek_body(messages)
 
     last_cause = "unknown"
     for attempt in range(MAX_DEEPSEEK_ATTEMPTS):

@@ -348,3 +348,33 @@ def test_parse_model_response_ignores_extra_keys():
         "done": False,
         "questions": ["Which source?"],
     }
+
+
+def test_model_receives_widget_examples(monkeypatch):
+    import asyncio
+    import httpx
+    original = httpx.AsyncClient
+    def handler(request):
+        import json
+        prompt = json.loads(request.content)["messages"][0]["content"]
+        assert "water-fountains-nyc" in prompt
+        assert "anymaps.ready()" in prompt
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"done":false,"questions":["Which source?"]}'}}]})
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    result = asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
+    assert result["done"] is False
+
+
+def test_model_id_reads_env_override(monkeypatch):
+    import asyncio
+    import httpx
+    original = httpx.AsyncClient
+    seen = {}
+    def handler(request):
+        import json
+        seen["model"] = json.loads(request.content)["model"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"done":false,"questions":["Which source?"]}'}}]})
+    monkeypatch.setenv("WIZARD_LLM_MODEL", "deepseek-test")
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    asyncio.run(main.call_deepseek([main.Message(role="user", content="Make a widget")], "test-key"))
+    assert seen["model"] == "deepseek-test"
