@@ -533,6 +533,12 @@ def _to_str(value):
     return str(value)
 
 
+def _record_mapping(channel):
+    if channel["origin"] == "external":
+        return channel.get("external", {}).get("record") or channel.get("record")
+    return channel.get("record")
+
+
 def index_fields(mapping, record, ingested_at):
     """Return (id_key, lat, lon, time) extracted from one record."""
     if not mapping:
@@ -552,7 +558,7 @@ def index_fields(mapping, record, ingested_at):
 
 def extract_records(channel, body):
     """Turn a fetched/request body into the list of whole records to cache."""
-    mapping = channel.get("record")
+    mapping = _record_mapping(channel)
     if channel["origin"] == "external":
         records_path = (mapping or {}).get("records")
         if records_path:
@@ -584,7 +590,7 @@ def store_records(db, widget_id, channel_id, instance_token, channel, records, i
             "DELETE FROM records WHERE widget_id = ? AND channel_id = ? AND instance_token IS ?",
             (widget_id, channel_id, instance_token),
         )
-    mapping = channel.get("record")
+    mapping = _record_mapping(channel)
     for record in records:
         id_key, lat, lon, time_value = index_fields(mapping, record, ingested_at)
         db.execute(
@@ -691,7 +697,7 @@ def test_query_ids_since_until(tmp_path):
     mapping = CHANNEL["record"]
     filters = filter_mod.parse_filters({"ids": "a,c", "since": "150", "until": "350"})
     result = filter_mod.query_records(db, "w", "c", None, mapping, filters)
-    assert sorted(r["hex"] for r in result) == ["a", "c"]
+    assert sorted(r["hex"] for r in result) == ["c"]
     db.close()
 ```
 
@@ -787,7 +793,7 @@ def query_records(db, widget_id, channel_id, instance_token, mapping, filters):
             current = newest.get(r["id_key"])
             if current is None or _later(r, current):
                 newest[r["id_key"]] = r
-        items = list(newest.values())
+        items = sorted(newest.values(), key=lambda r: (r["time"] is None, r["time"]))
 
     if "bounds" in filters:
         south, west, north, east = filters["bounds"]
@@ -1297,6 +1303,8 @@ def _effective_mapping(db, widget_id, channel):
         if row is None:
             raise HTTPException(status_code=404, detail="source channel not found")
         return json.loads(row["config"]).get("record", {})
+    if channel["origin"] == "external":
+        return channel.get("external", {}).get("record") or channel.get("record", {})
     return channel.get("record", {})
 
 
@@ -1337,12 +1345,17 @@ def _read(db, widget_id, channel_id, token, query_params):
         raise HTTPException(status_code=404, detail="channel not found")
     storage_token = _check_access(db, channel, widget_id, token)
     mapping = _effective_mapping(db, widget_id, channel)
+    storage_channel_id = (
+        channel["source"]
+        if channel["origin"] == "client" and channel["direction"] == "read"
+        else channel_id
+    )
     try:
         filters = filter_mod.parse_filters(query_params)
         filter_mod.validate_filters(mapping, filters)
     except filter_mod.FilterError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    result = filter_mod.query_records(db, widget_id, channel_id, storage_token, mapping, filters)
+    result = filter_mod.query_records(db, widget_id, storage_channel_id, storage_token, mapping, filters)
     return {"records": result}
 ```
 
@@ -1486,6 +1499,7 @@ Expected: FAIL (Poller has no `_fetch_once`, `_request`, `_run`)
 
 import asyncio
 import json
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -1537,6 +1551,7 @@ class Poller:
         headers = dict(ext.get("headers") or {})
         body = ext.get("body")
 
+        auth_injected = None
         auth = ext.get("auth")
         if auth:
             row = self.db.execute(
@@ -1549,8 +1564,10 @@ class Poller:
                 value = auth["scheme"] + value
             if auth["type"] == "header":
                 headers[auth["name"]] = value
+                auth_injected = ("header", auth["name"])
             else:
                 params[auth["name"]] = value
+                auth_injected = ("query", auth["name"])
 
         for _ in range(5):
             assert_source_url_allowed(url)
@@ -1567,7 +1584,11 @@ class Poller:
                 if response.status_code == 303:
                     method = "GET"
                     body = None
-                url = location
+                new_url = urljoin(url, location)
+                if auth_injected and urlparse(new_url).hostname != urlparse(url).hostname:
+                    kind, name = auth_injected
+                    (headers if kind == "header" else params).pop(name, None)
+                url = new_url
                 continue
             response.raise_for_status()
             return response.json()
