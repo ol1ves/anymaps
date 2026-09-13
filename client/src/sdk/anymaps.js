@@ -38,7 +38,7 @@
   }
   function dispatch(name, payload) {
     for (const h of handlers.get(name) ?? []) {
-      try { h(payload); } catch (e) { /* handler errors never break the widget */ }
+      try { h(payload); } catch (e) { console.error(e); /* handler errors never break the widget */ }
     }
   }
 
@@ -50,6 +50,7 @@
         const err = "protocolVersion " + m.protocolVersion +
           " not supported by this runtime";
         postMessage({ v: 1, kind: "error", error: err });
+        dispatch("error", { id: undefined, error: err });
         initReject(new Error(err));
         return;
       }

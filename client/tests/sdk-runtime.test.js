@@ -117,6 +117,8 @@ test("error routing fires the error handler with { id, error }", () => {
 
 test("protocol mismatch posts an error envelope and rejects ready()", async () => {
   const { anymaps, posted, receive } = loadRuntime();
+  const fired = [];
+  anymaps.on("error", (payload) => fired.push(payload));
   const pending = assert.rejects(
     anymaps.ready(),
     { message: "protocolVersion 2 not supported by this runtime" },
@@ -127,6 +129,9 @@ test("protocol mismatch posts an error envelope and rejects ready()", async () =
   assert.equal(posted[0].v, 1);
   assert.equal(posted[0].kind, "error");
   assert.equal(posted[0].error, "protocolVersion 2 not supported by this runtime");
+  assert.deepEqual(fired, [
+    { id: undefined, error: "protocolVersion 2 not supported by this runtime" },
+  ]);
 });
 
 test("persist payload is the partial object itself", () => {

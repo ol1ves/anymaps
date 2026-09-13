@@ -123,10 +123,14 @@ exceptions are caught and never crash the widget.
 | `markerClick` | `markerId`* — fired only for the owning widget |
 | `mapClick` | `lat`*, `lng`* |
 | `cameraGranted` | — |
+| `cameraDenied` | — |
 | `cameraRevoked` | `reason`* — `ttl` \| `userGesture` \| `released` \| `preempted` |
 | `viewportChanged` | `bounds`*, `center`*, `zoom`* — advisory, debounced on move-end |
 | `geolocation` | `lat`*, `lng`*, `accuracy`? (meters) |
 | `geolocationError` | `code`*, `message`* |
+
+`cameraDenied` is reserved for a future strict-leasing mode; it is never fired
+under preemption and is kept for protocol completeness.
 
 `viewportChanged` is suppressed for the widget that issued the camera command.
 Decide inside the handler whether to refetch.
