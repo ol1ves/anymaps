@@ -81,6 +81,7 @@ export function register(ctx) {
   host.className = "anymaps-wizard";
 
   const heading = document.createElement("h2");
+  heading.className = "anymaps-wizard-heading";
   heading.textContent = "Create a widget";
 
   const log = document.createElement("div");
@@ -96,6 +97,7 @@ export function register(ctx) {
 
   const sendBtn = document.createElement("button");
   sendBtn.type = "submit";
+  sendBtn.className = "anymaps-wizard-send";
   sendBtn.textContent = "Send";
 
   form.appendChild(input);

@@ -10,6 +10,7 @@
 //   - installed + disabled -> Enable (re-install path), Uninstall
 // It subscribes to ctx.bus events widget-enabled / widget-disabled /
 // widget-uninstalled and re-renders from ctx.manager.list() + server data.
+// Styling lives in src/styles.css under the anymaps-gallery-* classes.
 
 import { serverUrl } from "../install.js";
 
@@ -77,10 +78,8 @@ export function register(ctx) {
     root.replaceChildren();
 
     const heading = document.createElement("h2");
+    heading.className = "anymaps-gallery-heading";
     heading.textContent = "Widgets";
-    heading.style.fontSize = "15px";
-    heading.style.fontWeight = "600";
-    heading.style.margin = "0 0 6px";
     root.appendChild(heading);
 
     const refresh = document.createElement("button");
@@ -91,23 +90,20 @@ export function register(ctx) {
 
     const list = document.createElement("ul");
     list.className = "anymaps-gallery-list";
-    list.style.listStyle = "none";
-    list.style.margin = "8px 0 0";
-    list.style.padding = "0";
     root.appendChild(list);
 
     if (serverError) {
       const li = document.createElement("li");
+      li.className = "anymaps-gallery-list-error";
       li.textContent = serverError;
-      li.style.color = "#b91c1c";
       list.appendChild(li);
       return;
     }
 
     if (serverList.length === 0) {
       const li = document.createElement("li");
+      li.className = "anymaps-gallery-list-empty";
       li.textContent = "No widgets published.";
-      li.style.color = "#6b7280";
       list.appendChild(li);
       return;
     }
@@ -117,38 +113,27 @@ export function register(ctx) {
     for (const item of serverList) {
       const li = document.createElement("li");
       li.className = "anymaps-gallery-item anymaps-widget-" + item.id;
-      li.style.borderTop = "1px solid #e5e7eb";
-      li.style.padding = "6px 0";
-      li.style.display = "flex";
-      li.style.gap = "6px";
-      li.style.alignItems = "flex-start";
 
       const icon = makeIcon(item.icon);
       if (icon) li.appendChild(icon);
 
       const body = document.createElement("div");
-      body.style.flex = "1";
-      body.style.minWidth = "0";
+      body.className = "anymaps-gallery-body";
 
       const name = document.createElement("div");
-      name.style.fontWeight = "600";
-      name.style.fontSize = "13px";
+      name.className = "anymaps-gallery-name";
       name.textContent = item.name || item.id;
       body.appendChild(name);
 
       if (isNonEmptyString(item.description)) {
         const desc = document.createElement("div");
-        desc.style.fontSize = "12px";
-        desc.style.color = "#4b5563";
-        desc.style.whiteSpace = "pre-wrap";
+        desc.className = "anymaps-gallery-desc";
         desc.textContent = item.description;
         body.appendChild(desc);
       }
 
       const meta = document.createElement("div");
-      meta.style.fontSize = "11px";
-      meta.style.color = "#6b7280";
-      meta.style.marginTop = "2px";
+      meta.className = "anymaps-gallery-meta";
       meta.textContent = "v" + (item.version || "?");
       body.appendChild(meta);
 
@@ -158,21 +143,13 @@ export function register(ctx) {
       const inFlight = pending.has(item.id);
 
       const controls = document.createElement("div");
-      controls.style.marginTop = "4px";
-      controls.style.display = "flex";
-      controls.style.gap = "4px";
-      controls.style.flexWrap = "wrap";
+      controls.className = "anymaps-gallery-controls";
 
       function addBtn(label, onClick, opts = {}) {
         const b = document.createElement("button");
         b.textContent = label;
         b.className = "anymaps-gallery-btn";
-        b.style.fontSize = "11px";
-        b.style.border = "1px solid #d1d5db";
-        b.style.background = opts.background || "#fff";
-        b.style.borderRadius = "6px";
-        b.style.padding = "1px 6px";
-        b.style.cursor = "pointer";
+        if (opts.danger) b.classList.add("anymaps-gallery-btn--danger");
         b.addEventListener("click", onClick);
         controls.appendChild(b);
         return b;
@@ -182,20 +159,13 @@ export function register(ctx) {
         const span = document.createElement("span");
         span.textContent = text;
         span.className = "anymaps-gallery-badge";
-        span.style.fontSize = "11px";
-        span.style.color = "#15803d";
-        span.style.border = "1px solid #bbf7d0";
-        span.style.background = "#f0fdf4";
-        span.style.borderRadius = "6px";
-        span.style.padding = "1px 6px";
         controls.appendChild(span);
       }
 
       function addErr(msg) {
         const span = document.createElement("span");
         span.textContent = msg;
-        span.style.fontSize = "11px";
-        span.style.color = "#b91c1c";
+        span.className = "anymaps-gallery-error";
         controls.appendChild(span);
       }
 
@@ -223,7 +193,7 @@ export function register(ctx) {
       } else if (enabled) {
         addBadge("Enabled");
         addBtn("Disable", () => ctx.manager.disable(item.id));
-        addBtn("Uninstall", () => ctx.manager.uninstall(item.id), { background: "#fef2f2" });
+        addBtn("Uninstall", () => ctx.manager.uninstall(item.id), { danger: true });
       } else {
         // Re-enable uses the stored registry version, not the listed server
         // version (the brief pins "re-installs via install path with the
@@ -247,7 +217,7 @@ export function register(ctx) {
           pending.delete(item.id);
           render();
         });
-        addBtn("Uninstall", () => ctx.manager.uninstall(item.id), { background: "#fef2f2" });
+        addBtn("Uninstall", () => ctx.manager.uninstall(item.id), { danger: true });
       }
 
       body.appendChild(controls);
@@ -265,8 +235,7 @@ export function register(ctx) {
       : null;
     if (!controls) return;
     const span = document.createElement("span");
-    span.style.fontSize = "11px";
-    span.style.color = "#b91c1c";
+    span.className = "anymaps-gallery-error";
     span.textContent = msg;
     controls.appendChild(span);
   }
