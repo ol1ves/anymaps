@@ -195,7 +195,7 @@ Identity: `id` (unique slug), `name`, `version` (semver), `description`, optiona
 | `id` | string | unique within the widget |
 | `origin` | `client` \| `external` | |
 | `direction` | `write` \| `read` | one channel = one handler |
-| `visibility` | `public` \| `private` | private = instance-scoped |
+| `visibility` | `public` \| `private` | private = instance-scoped; a client read channel must match its source write channel |
 | `source` | string | client read channels only: the write channel id |
 | `record` | object | optional record mapping (section 7.2) |
 | `external` | object | external read channels only (section 7.3) |
@@ -205,7 +205,8 @@ Identity: `id` (unique slug), `name`, `version` (semver), `description`, optiona
 Direction × origin matrix:
 
 - `client` + `write`: clients POST records.
-- `client` + `read`: clients GET records; `source` references the write channel.
+- `client` + `read`: clients GET records; `source` references the write channel;
+  `visibility` must match the source write channel.
 - `external` + `read`: clients GET the poller's cache; `external` block required.
 - `external` + `write`: not allowed.
 
