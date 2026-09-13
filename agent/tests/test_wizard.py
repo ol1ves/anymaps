@@ -264,9 +264,72 @@ def test_wizard_secret_verifies_then_stores_without_llm(monkeypatch):
         },
     )
     assert response.status_code == 201
-    assert response.json() == {"secretId": "secret-id"}
+    assert response.json()["secretId"] == "secret-id"
     assert seen["value"] == "secret-value"
     assert seen["source"].headers == {"X-API-Key": "secret-value"}
+
+
+def test_parse_model_response_accepts_plan():
+    payload = {
+        "done": False,
+        "plan": {
+            "proposal": "Approve publishing weather widget?",
+            "sources": [
+                {
+                    "id": "noaa-token",
+                    "method": "GET",
+                    "url": "https://www.ncei.noaa.gov/cdo-web/api/v2/stations",
+                    "query": {},
+                    "headers": {},
+                    "auth": {"type": "header", "name": "token", "scheme": ""},
+                }
+            ],
+        },
+    }
+    result = main._parse_model_response(payload)
+    assert result["done"] is False
+    assert result["plan"].proposal == "Approve publishing weather widget?"
+    assert result["plan"].sources[0].id == "noaa-token"
+    assert result["plan"].sources[0].auth.type == "header"
+
+
+def test_wizard_request_accepts_secrets():
+    request = main.WizardRequest.model_validate(
+        {
+            "messages": [{"role": "user", "content": "weather"}],
+            "secrets": [{"id": "noaa-token", "secretId": "abc123", "shape": {"ok": True}}],
+        }
+    )
+    assert request.secrets[0].id == "noaa-token"
+    assert request.secrets[0].secretId == "abc123"
+
+
+def test_wizard_secret_returns_shape(monkeypatch):
+    seen = {}
+
+    async def fake_test(source):
+        seen["source"] = source
+        return {"ok": True, "top_level_type": "object", "arrays": []}
+
+    async def fake_store(value, *, server_url):
+        seen["value"] = value
+        return "secret-id"
+
+    monkeypatch.setattr(main, "test_source", fake_test)
+    monkeypatch.setattr(main, "store_secret", fake_store)
+    response = client.post(
+        "/wizard/secrets",
+        json={
+            "value": "secret-value",
+            "source": {"url": "https://api.example.com/data"},
+            "auth": {"type": "header", "name": "X-API-Key"},
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["secretId"] == "secret-id"
+    assert body["shape"] == {"ok": True, "top_level_type": "object", "arrays": []}
+    assert "secret-value" not in body
 
 
 def test_wizard_secret_does_not_store_blocked_source(monkeypatch):
