@@ -18,6 +18,14 @@ function storeFor(widgetId) {
   return m;
 }
 
+// Additive lookup exported for popups.js anchored-popup support (Task 3).
+// Returns the maplibregl.Marker instance for a widget's marker id, or
+// undefined if not found. Does not restructure markers.js.
+export function getMarker(widgetId, id) {
+  const rec = storeFor(widgetId).get(id);
+  return rec ? rec.marker : undefined;
+}
+
 function isImageUrl(icon) {
   if (typeof icon !== "string") return false;
   return /^(https?:)?\/\//i.test(icon) || icon.startsWith("data:");
