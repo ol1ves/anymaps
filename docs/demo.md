@@ -10,13 +10,18 @@ The agent validates both the schema and the shared cross-channel invariants.
 Its model request includes the schema and SDK guidance, and its CORS defaults
 allow the client at localhost:5173 and 127.0.0.1:5173.
 
-Current client integration dependencies: `client/src/install.js`,
-`client/src/ui/gallery.js`, and `client/src/ui/wizard.js` are still stubs.
-Install does not call the provisioning endpoint; startup does not restore
-enabled widgets. Friends room/name/leave controls are not implemented either.
-Use the manual path below until Column A supplies those features. The three
-demo sections later in this document are acceptance criteria, not claims that
-the current UI implements them.
+The client UI is implemented and covered by `client/tests` plus a production
+build: `client/src/install.js` provisions on enable and re-enables registry
+entries on startup, `client/src/ui/gallery.js` browses and installs published
+widgets, and `client/src/ui/wizard.js` drives the Agent Service and
+auto-installs the generated widget. The three demo sections later in this
+document are acceptance criteria to confirm in a browser rehearsal, not claims
+verified without a browser. Friends room/name/leave controls are still manual:
+a second user joins by writing the room token into
+`anymaps.state.find-my-friends.iid` before enabling (see the second-browser
+steps below). The flights manifest sends a `User-Agent` header because
+ADSB.lol rejects the httpx default with 403; the bathrooms manifest already
+sets one.
 
 The wizard's live model output and live feed availability require a separate
 rehearsal. Source testing currently happens after candidate generation and
@@ -47,7 +52,7 @@ npm test
 npm run build
 ```
 
-## Manual integration path while client UI is pending
+## Manual integration path (fallback)
 
 Start these commands in separate terminals from the repository root:
 
@@ -106,8 +111,9 @@ for (const id of ['nyc-bathrooms', 'flights-nyc', 'find-my-friends']) {
 Allow location access. Pan around NYC after the initial upstream poll finishes;
 bathrooms refresh on map movement and flights refresh every five seconds.
 Click an aircraft to inspect details and its trail. Watch both the browser
-console and server logs for errors. Repeat the console setup after reloading
-because automatic startup is still a stub.
+console and server logs for errors. The client re-enables installed widgets on
+reload (`startupEnable`), so a browser refresh resumes the demo without
+rerunning the console helper.
 
 For a second browser profile, run the helper above there too. Copy the token
 from browser 1's Friends panel; in browser 2 run:
